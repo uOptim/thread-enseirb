@@ -1,12 +1,14 @@
 #ifndef __THREAD_H__
 #define __THREAD_H__
 
-/* identifiant de thread
- * NB: pourra être un entier au lieu d'un pointeur si ca vous arrange,
- *     mais attention aux inconvénient des tableaux de threads
- *     (consommation mémoire, cout d'allocation, ...).
- */
-typedef void * thread_t;
+#include <stdio.h>
+
+#include "queue.h"
+
+
+/* identifiant de thread */
+typedef struct thread * thread_t;
+
 
 /* recuperer l'identifiant du thread courant.
  */

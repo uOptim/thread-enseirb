@@ -58,7 +58,7 @@ int thread_yield(void)
 	cur = LIST_NEXT(cur, threads);
 
 	if (cur == NULL) {
-		cur = tmp;
+		cur = LIST_FIRST(&head);
 	} else {
 		rv = swapcontext(&tmp->uc, &cur->uc);
 	}

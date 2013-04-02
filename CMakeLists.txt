@@ -6,4 +6,5 @@ set(CMAKE_C_FLAGS "-g -Wall")
 include_directories (${PROJECT_SOURCE_DIR}/include)
 
 add_subdirectory (src)
+add_subdirectory (tests)
 

@@ -6,7 +6,8 @@
 static char init = 0;
 
 static struct thread mainthread;
-static struct thread *cur = &mainthread; // thread courrant
+static struct thread *curthread  = &mainthread; // thread courrant
+static struct thread *nextthread = &mainthread; // thread suivant schedulé
 
 /* Generation structure de liste doublement chainée des threads */
 LIST_HEAD(tqueue, thread) head;
@@ -26,7 +27,9 @@ static void __init()
 	getcontext(&mainthread.uc);
 
 	LIST_INIT(&head);
-	LIST_INSERT_HEAD(&head, &mainthread, threads);
+	// mainthread semble être un cas particulier et n'est pas traîté de la
+	// même façon que les autres threads d'après tests/02-switch.c
+	//LIST_INSERT_HEAD(&head, &mainthread, threads);
 
 	init = 1;
 }
@@ -35,7 +38,7 @@ thread_t thread_self(void)
 {
 	if (!init) __init();
 
-	return cur;
+	return curthread;
 }
 
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
@@ -54,13 +57,30 @@ int thread_yield(void)
 	int rv = 0;
 	struct thread *tmp;
 	
-	tmp = cur;
-	cur = LIST_NEXT(cur, threads);
+	// yield depuis le main
+	if (curthread == &mainthread) { 
+		// swapcontext si thread schedulé
+		if (nextthread != NULL) {
+			curthread = nextthread;
+			rv = swapcontext(&mainthread.uc, &curthread->uc);
+		}
+	} 
 
-	if (cur == NULL) {
-		cur = LIST_FIRST(&head);
-	} else {
-		rv = swapcontext(&tmp->uc, &cur->uc);
+	// yield depuis un thread != du main
+	else { 
+		// màj thread suivant
+		nextthread = LIST_NEXT(curthread, threads);
+		if (nextthread == NULL && !LIST_EMPTY(&head)) {
+			// boucler si en fin de liste
+			nextthread = LIST_FIRST(&head);
+		}
+
+		// donner la main au main
+		tmp = curthread;
+		curthread = &mainthread;
+		
+		// swapcontext
+		rv = swapcontext(&tmp->uc, &curthread->uc);
 	}
 
 	return rv;

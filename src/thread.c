@@ -64,6 +64,16 @@ static int _swap_thread(struct thread *th1, struct thread *th2)
 }
 
 
+// sert à capturer la valeur de retour des threads ne faisant pas de
+// thread_exit() mais un return
+static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
+{
+	void *retval;
+	retval = func(funcarg);
+	thread_exit(retval);
+}
+
+
 thread_t thread_self(void)
 {
 	if (!init) __init();
@@ -104,7 +114,9 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
   	(*newthread)->uc.uc_stack.ss_sp = malloc(64*1024);
 
 	LIST_INSERT_HEAD(&ready, *newthread, threads);
-  	makecontext(&(*newthread)->uc, (void (*)(void)) func, 1, funcarg);
+  	makecontext(
+		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
+	);
 
 	return 0;
 }

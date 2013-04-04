@@ -160,10 +160,9 @@ int thread_join(thread_t thread, void **retval)
 	if (!init) __init();
 
 	int rv = 0;
-	struct thread *self = thread_self();
 
 	while (!thread->isdone) {
-		rv = _swap_thread(self, thread);
+		rv = thread_yield();
 	}
 
 	*retval = thread->retval;

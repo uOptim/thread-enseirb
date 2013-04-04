@@ -152,11 +152,6 @@ int thread_join(thread_t thread, void **retval)
 
 	while (!thread->isdone) {
 		rv = _swap_thread(self, thread);
-
-		if (rv) {
-			perror("swapcontext");
-			return rv;
-		}
 	}
 
 	*retval = thread->retval;

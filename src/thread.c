@@ -47,6 +47,23 @@ static void __init()
 }
 
 
+// Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non
+// mis à jour.
+static int _swap_thread(struct thread *th1, struct thread *th2)
+{
+	int rv = 0;
+	curthread = th2;
+
+	rv = swapcontext(&th1->uc, &th2->uc);
+
+	if (rv) {
+		perror("swapcontext");
+	}
+
+	return rv;
+}
+
+
 thread_t thread_self(void)
 {
 	if (!init) __init();
@@ -108,8 +125,7 @@ int thread_yield(void)
 
 		// swapcontext si thread schedulé
 		if (nextthread != NULL) {
-			curthread = nextthread;
-			rv = swapcontext(&self->uc, &curthread->uc);
+			rv = _swap_thread(self, nextthread);
 		}
 		
 		// sinon ne rien faire (rester dans main)
@@ -119,10 +135,8 @@ int thread_yield(void)
 	else { 
 		// màj thread suivant
 		nextthread = LIST_NEXT(self, threads);
-		curthread = &mainthread;
-
 		// donner la main au mainthread
-		rv = swapcontext(&self->uc, &mainthread.uc);
+		rv = _swap_thread(self, &mainthread);
 	}
 
 	return rv;
@@ -137,8 +151,7 @@ int thread_join(thread_t thread, void **retval)
 	struct thread *self = thread_self();
 
 	while (!thread->isdone) {
-		curthread = thread;
-		rv = swapcontext(&self->uc, &thread->uc);
+		rv = _swap_thread(self, thread);
 
 		if (rv) {
 			perror("swapcontext");
@@ -173,10 +186,7 @@ void thread_exit(void *retval)
 		self->retval = retval;
 
 		// repasser au main
-		curthread = &mainthread;
-		if (swapcontext(&self->uc, &mainthread.uc)) {
-			perror("swapcontext");
-		}
+		_swap_thread(self, &mainthread);
 	}
 }
 

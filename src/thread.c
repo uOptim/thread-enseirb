@@ -39,9 +39,6 @@ static void __init()
 	getcontext(&mainthread.uc);
 
 	LIST_INIT(&ready);
-	// mainthread semble être un cas particulier et n'est pas traîté de la
-	// même façon que les autres threads d'après tests/02-switch.c
-	//LIST_INSERT_HEAD(&ready, &mainthread, threads);
 
 	init = 1;
 }
@@ -167,10 +164,12 @@ int thread_join(thread_t thread, void **retval)
 
 	*retval = thread->retval;
 
-	// libérer ressources
-	VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-	free(thread->uc.uc_stack.ss_sp);
-	free(thread);
+	if (thread != &mainthread) {
+		// libérer ressource
+		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
+		free(thread->uc.uc_stack.ss_sp);
+		free(thread);
+	}
 
 	return rv;
 }
@@ -182,17 +181,24 @@ void thread_exit(void *retval)
 
 	struct thread *self = thread_self();
 
+	self->isdone = 1;
+	self->retval = retval;
+
 	if (self != &mainthread) {
 		// màj thread suivant
 		nextthread = LIST_NEXT(self, threads);
-		
 		LIST_REMOVE(self, threads);
-
-		self->isdone = 1;
-		self->retval = retval;
 
 		// repasser au main
 		_swap_thread(self, &mainthread);
 	}
+
+	else {
+		do {
+			thread_yield();
+		} while (!LIST_EMPTY(&ready));
+	}
+
+	exit(0);
 }
 

@@ -26,3 +26,6 @@ target_link_libraries (32-switch-many-join thread)
 
 add_executable (51-fibonacci 51-fibonacci.c)
 target_link_libraries (51-fibonacci thread)
+
+add_executable (merge-sort merge-sort.c)
+target_link_libraries (merge-sort thread)

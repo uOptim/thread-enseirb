@@ -128,6 +128,7 @@ int thread_yield(void)
 	
 	// yield depuis le main
 	if (self == &mainthread) { 
+	        //cas où on arrive en bout de liste : on reboucle sur la tete
 		if (nextthread == NULL && !LIST_EMPTY(&ready)) {
 			nextthread = LIST_FIRST(&ready);
 		}

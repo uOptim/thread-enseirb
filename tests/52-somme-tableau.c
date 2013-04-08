@@ -4,6 +4,9 @@
 #include "thread.h"
 
 /* Somme des éléments d'un tableau méthode diviser pour régner
+ *
+ * Ce programme stocke dans un tableau de taille N les entiers de 1 à N et
+ * calcule leur somme. On fait la vérification du résultat avec N*(N+1)/2
  */
 
 struct bundle {
@@ -17,7 +20,7 @@ static void * sum(void *arg)
 {
 	struct bundle *b = (struct bundle *) arg;
 
-	int middle;
+	int err, middle;
 	void *res, *res1, *res2;
 	thread_t th1, th2;
 	struct bundle b1, b2;
@@ -41,11 +44,15 @@ static void * sum(void *arg)
 		//		b1.start, b1.end,
 		//		b2.start, b2.end);
 
-		thread_create(&th1, sum, &b1);
-		thread_create(&th2, sum, &b2);
+		err = thread_create(&th1, sum, &b1);
+		assert(!err);
+		err = thread_create(&th2, sum, &b2);
+		assert(!err);
 
-		thread_join(th1, &res1);
-		thread_join(th2, &res2);
+		err = thread_join(th1, &res1);
+		assert(!err);
+		err = thread_join(th2, &res2);
+		assert(!err);
 
 		res = (void *) ((int) res1 + (int) res2);
 	}
@@ -77,6 +84,7 @@ int main(int argc, char *argv[])
 
 	free(array);
 
+	assert(res == size * (size+1) / 2);
 	printf("somme des entiers de 1 à %d = %d\n", size, res);
 
 	return 0;

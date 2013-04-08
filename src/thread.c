@@ -92,8 +92,6 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 		return -1;
 	}
 
-	fprintf(stderr, "Creating new thread, id = %d\n", id);
-
 	getcontext(&(*newthread)->uc);
 	(*newthread)->id = id++;
 	(*newthread)->isdone = 0;

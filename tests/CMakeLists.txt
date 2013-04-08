@@ -12,6 +12,9 @@ target_link_libraries (11-join thread)
 add_executable (12-join-main 12-join-main.c)
 target_link_libraries (12-join-main thread)
 
+add_executable (13-join-cascade 13-join-cascade.c)
+target_link_libraries (13-join-cascade thread)
+
 add_executable (21-create-many 21-create-many.c)
 target_link_libraries (21-create-many thread)
 
@@ -29,3 +32,6 @@ target_link_libraries (51-fibonacci thread)
 
 add_executable (merge-sort merge-sort.c)
 target_link_libraries (merge-sort thread)
+
+add_executable (52-somme-tableau 52-somme-tableau.c)
+target_link_libraries (52-somme-tableau thread)

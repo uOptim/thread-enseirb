@@ -68,7 +68,7 @@ static void * quicksort(void *_value)
     return NULL;
   
   TYPE pivot = first + rand()%(last - first + 1);
-  pivot = partitionner(first, last, pivot);
+  pivot = partition(first, last, pivot);
   
   TYPE value1[2] = {first, pivot - 1};
   TYPE value2[2] = {pivot + 1, last};

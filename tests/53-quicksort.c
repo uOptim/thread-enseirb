@@ -33,15 +33,15 @@ static void print(TYPE length) {
   fprintf(stdout, "]\n");
 }
 
-static TYPE partitionner(TYPE premier, TYPE dernier, TYPE pivot) {
+static TYPE partition(TYPE first, TYPE last, TYPE pivot) {
   TYPE i, j = T[pivot], tmp;
-  T[pivot] = T[dernier];
-  T[dernier] = j;
+  T[pivot] = T[last];
+  T[last] = j;
   
-  j = premier;
+  j = first;
 
-  for (i = premier; i < dernier; i++) {
-    if (T[i] <= T[dernier]) {
+  for (i = first; i < last; i++) {
+    if (T[i] <= T[last]) {
       tmp = T[i];
       T[i] = T[j];
       T[j] = tmp;
@@ -49,33 +49,33 @@ static TYPE partitionner(TYPE premier, TYPE dernier, TYPE pivot) {
       j++;
     }
   }
-  tmp = T[dernier];
-  T[dernier] = T[j];
+  tmp = T[last];
+  T[last] = T[j];
   T[j] = tmp;
   
   return j;
 }
 
-static void * triRapide(void *_value)
+static void * quicksort(void *_value)
 {
   thread_t th, th2;
   int err;
   void *res = NULL, *res2 = NULL;
-  TYPE premier = ((TYPE *) _value)[0];
-  TYPE dernier = ((TYPE *) _value)[1];
+  TYPE first = ((TYPE *) _value)[0];
+  TYPE last = ((TYPE *) _value)[1];
 
-  if (premier >= dernier)
+  if (first >= last)
     return NULL;
   
-  TYPE pivot = premier + rand()%(dernier - premier + 1);
-  pivot = partitionner(premier, dernier, pivot);
+  TYPE pivot = first + rand()%(last - first + 1);
+  pivot = partitionner(first, last, pivot);
   
-  TYPE value1[2] = {premier, pivot - 1};
-  TYPE value2[2] = {pivot + 1, dernier};
+  TYPE value1[2] = {first, pivot - 1};
+  TYPE value2[2] = {pivot + 1, last};
   
-  err = thread_create(&th, triRapide, (void*)value1);
+  err = thread_create(&th, quicksort, (void*)value1);
   assert(!err);
-  err = thread_create(&th2, triRapide, (void*)value2);
+  err = thread_create(&th2, quicksort, (void*)value2);
   assert(!err);
 
   err = thread_join(th, &res);
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
   
   print(length);
   TYPE value[2] = {0, length - 1};
-  triRapide((void *)value);
+  quicksort((void *)value);
   print(length);
 
   return 0;

@@ -30,8 +30,12 @@ target_link_libraries (32-switch-many-join thread)
 add_executable (51-fibonacci 51-fibonacci.c)
 target_link_libraries (51-fibonacci thread)
 
-add_executable (merge-sort merge-sort.c)
-target_link_libraries (merge-sort thread)
+add_executable (52-array-sum 52-array-sum.c)
+target_link_libraries (52-array-sum thread)
 
-add_executable (52-somme-tableau 52-somme-tableau.c)
-target_link_libraries (52-somme-tableau thread)
+add_executable (53-quicksort 53-quicksort.c)
+target_link_libraries (53-quicksort thread)
+
+add_executable (54-mergesort 54-mergesort.c)
+target_link_libraries (54-mergesort thread)
+

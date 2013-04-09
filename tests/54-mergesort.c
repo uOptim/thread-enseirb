@@ -123,5 +123,7 @@ int main(int argc, char * argv[])
 
   printf ("\n");
 
+  free(a);
+  
   return 0;
 }

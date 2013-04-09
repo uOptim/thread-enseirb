@@ -108,6 +108,8 @@ int main(int argc, char *argv[])
   TYPE value[2] = {0, length - 1};
   quicksort((void *)value);
   print(length);
-
+  
+  free(T);
+  
   return 0;
 }

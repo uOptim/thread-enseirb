@@ -1,0 +1,68 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{alltt}
+\usepackage{listings}
+\usepackage{moreverb}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+\usepackage{tikz}
+
+\usetikzlibrary{mindmap,trees}
+\addtolength{\hoffset}{-1cm}
+\addtolength{\textwidth}{2cm}
+
+\definecolor{rouge}{HTML}{993333} 
+
+\title{
+	\normalsize{ENSEIRB-MATMECA \\ 
+	2012 - 2013 \\
+	2ème année informatique} \\
+	\vspace{15mm}
+	\Huge{\textcolor{blue}{Projet de Système d'Exploitation }}
+} 
+\author{ BENOIT Amélie \\ BRISSET Clément \\ LANDEIRO DOS REIS Virgile \\ RABENJAMINA Samantha \\ RUELLE BENOIT}
+
+\date{
+	\normalsize{Enseignant encadrant : François TESSIER}
+}
+
+\begin{document}
+
+\maketitle
+
+\clearpage
+
+\section{Introduction et mise en route}
+
+- But et objectifs du projet \\
+
+Réponse aux questions, changement de contexte etc.
+En quoi ça nous a servi pour la suite
+
+\section{Développement de la bibliothèque}
+La première étape a été de récupérer le squelette du code de la bibliothèque de thread et de coder les fonctions nécessaire à son fonctionnement. Cette partie explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la façon dont nous les avons résolus.
+\subsection{Choix de programmations}
+- initalisation \\
+- choix de la liste \\
+- execution du programme d'exemple --> Valgrind\\
+- etc
+\subsection{Le cas du thread principal}
+
+\section{Tests de robustesse et de performance}
+\subsection{Les tests de base}
+\subsection{Tests implémentés}
+\subsubsection{Somme des éléments d'un tableau}
+\subsubsection{Les tris tableau}
+
+\clearpage
+\section{Réflexion sur les objectifs avancés}
+- Préemption : créer un thread ( !!! différent de notre bibliothèque (pthread) , sinon on ne pourra jamais ordonnancer) en parallèle du main qui ferait des getTimeofDay et lancerait une fonction thead\_schedule toutes les X millisecondes. Cette fonction passerait la main au thread suivant dans la liste.\\
+
+- Priorité -- une fois qu'on a géré la préemption ...
+\clearpage
+\section{Conclusion}
+
+
+\end{document}

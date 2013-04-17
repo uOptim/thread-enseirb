@@ -33,9 +33,9 @@ struct thread {
 LIST_HEAD(tqueue, thread) ready, done;
 
 static int _swap_thread(struct thread *th1, struct thread *th2);
-static void _schedule_thread();
-static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *funcarg);
-
+static void _swap_scheduler();
+static int _initialize_thread(thread_t *newthread, void* (*func)(void*), void *funcarg);
+static void* _schedule_thread(void*);
 
 
 
@@ -48,10 +48,10 @@ static void __init()
 
 	LIST_INIT(&ready);
 
-	//_initialize_thread(&scheduler, void *(*func)(void *), void *funcarg);
-/*
+	_initialize_thread(&scheduler, _schedule_thread, NULL);
+
 	struct sigaction sa;
-  	sa.sa_handler = _schedule_thread;
+  	sa.sa_handler = _swap_scheduler;
   	sa.sa_flags = 0;
   
   	sigemptyset(&sa.sa_mask);
@@ -59,12 +59,21 @@ static void __init()
     sigsuspend(&sa.sa_mask);
 
     ualarm(1000, 1000);
-*/
+
 	init = 1;
 }
 
 
-static void _schedule_thread() {
+static void* _schedule_thread(void* v){
+	struct thread *self = thread_self();
+	// màj thread suivant
+	nextthread = LIST_NEXT(self, threads);
+		// donner la main au thread suivant
+	_swap_thread(self, nextthread);
+	return NULL;
+}
+
+static void _swap_scheduler() {
 	if(LIST_EMPTY(&ready))	//ou que la liste ne contient qu un element
 		return;
 	_swap_thread(thread_self(),scheduler);
@@ -148,7 +157,7 @@ static void _insert_thread(thread_t newthread){
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 {
 	_initialize_thread(newthread, func, funcarg);
-	_insert_thread(newthread);
+	_insert_thread(*newthread);
 	return 0;
 }
 

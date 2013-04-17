@@ -48,7 +48,14 @@ La première étape a été de récupérer le squelette du code de la bibliothè
 - choix de la liste \\
 - execution du programme d'exemple --> Valgrind\\
 - etc
+
 \subsection{Le cas du thread principal}
+
+Les tests qui nous sont fourni demandent à ce que le thread principal fasse
+des \verb!yield! vers des fils et un fils doit faire des \verb!yield! vers le
+thread principal. De plus, le thread principal doit pouvoir être utilisé dans
+la fonction \verb!thread_join()! tout en permettant aux autres threads de
+continuer à utiliser \verb!yield!.
 
 \section{Tests de robustesse et de performance}
 \subsection{Les tests de base}

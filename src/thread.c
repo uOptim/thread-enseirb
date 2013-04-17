@@ -3,6 +3,8 @@
 
 #include <stdlib.h>
 #include <ucontext.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <valgrind/valgrind.h>
 
@@ -10,6 +12,7 @@
 static char init = 0;
 
 static struct thread mainthread;
+static struct thread *scheduler;
 static struct thread *curthread  = &mainthread; // thread courrant
 static struct thread *nextthread = NULL;        // thread suivant schedulé
 
@@ -29,6 +32,11 @@ struct thread {
 /* Generation structure de liste doublement chainée des threads */
 LIST_HEAD(tqueue, thread) ready, done;
 
+static int _swap_thread(struct thread *th1, struct thread *th2);
+static void _schedule_thread();
+static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *funcarg);
+
+
 
 
 static void __init()
@@ -40,9 +48,27 @@ static void __init()
 
 	LIST_INIT(&ready);
 
+	//_initialize_thread(&scheduler, void *(*func)(void *), void *funcarg);
+/*
+	struct sigaction sa;
+  	sa.sa_handler = _schedule_thread;
+  	sa.sa_flags = 0;
+  
+  	sigemptyset(&sa.sa_mask);
+    sigaction(SIGALRM, &sa, NULL);
+    sigsuspend(&sa.sa_mask);
+
+    ualarm(1000, 1000);
+*/
 	init = 1;
 }
 
+
+static void _schedule_thread() {
+	if(LIST_EMPTY(&ready))	//ou que la liste ne contient qu un element
+		return;
+	_swap_thread(thread_self(),scheduler);
+}
 
 // Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non
 // mis à jour.
@@ -79,8 +105,7 @@ thread_t thread_self(void)
 }
 
 
-int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
-{
+static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *funcarg) {
 	static unsigned int id = 1;
 
 	if (!init) __init();
@@ -107,12 +132,23 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 		);
 
   	(*newthread)->uc.uc_stack.ss_sp = malloc(64*1024);
-
-	LIST_INSERT_HEAD(&ready, *newthread, threads);
+	
   	makecontext(
 		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
 	);
 
+	return 0;
+}
+
+static void _insert_thread(thread_t newthread){
+	LIST_INSERT_HEAD(&ready, newthread, threads);
+}
+
+
+int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
+{
+	_initialize_thread(newthread, func, funcarg);
+	_insert_thread(newthread);
 	return 0;
 }
 

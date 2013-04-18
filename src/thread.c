@@ -5,6 +5,7 @@
 #include <ucontext.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include <valgrind/valgrind.h>
 
@@ -16,6 +17,7 @@ static struct thread *scheduler;
 static struct thread *curthread  = &mainthread; // thread courrant
 static struct thread *nextthread = NULL;        // thread suivant schedulé
 
+static struct timeval tv;
 
 struct thread {
 	unsigned int id;
@@ -50,33 +52,50 @@ static void __init()
 
 	_initialize_thread(&scheduler, _schedule_thread, NULL);
 
+	init = 1;
+
+	ualarm(1000, 1000);
+
 	struct sigaction sa;
   	sa.sa_handler = _swap_scheduler;
   	sa.sa_flags = 0;
   
   	sigemptyset(&sa.sa_mask);
-    sigaction(SIGALRM, &sa, NULL);
-    sigsuspend(&sa.sa_mask);
-
-    ualarm(1000, 1000);
-
-	init = 1;
+	sigaction(SIGALRM, &sa, NULL);
+	while (!LIST_EMPTY(&ready))
+	  sigsuspend(&sa.sa_mask);
 }
 
 
 static void* _schedule_thread(void* v){
-	struct thread *self = thread_self();
-	// màj thread suivant
-	nextthread = LIST_NEXT(self, threads);
-		// donner la main au thread suivant
-	_swap_thread(self, nextthread);
-	return NULL;
+  printf("scheduler\n");
+  while (!LIST_EMPTY(&ready)){
+    struct thread *self = thread_self();
+    // màj thread suivant
+    if (nextthread == NULL && !LIST_EMPTY(&ready)) {
+      nextthread = LIST_FIRST(&ready);
+    }
+    else
+      nextthread = LIST_NEXT(&ready, threads);
+    // donner la main au thread suivant
+    gettimeofday(&tv, NULL);
+    _swap_thread(self, nextthread);
+  }
+  return NULL;
 }
 
 static void _swap_scheduler() {
-	if(LIST_EMPTY(&ready))	//ou que la liste ne contient qu un element
-		return;
-	_swap_thread(thread_self(),scheduler);
+
+  if (init) {
+    struct timeval tv2;
+  gettimeofday(&tv2, NULL);
+  unsigned long usec = (tv2.tv_sec-tv.tv_sec)*1000000 + (tv2.tv_usec-tv1.usec);
+  printf("thread %p: %d usec\n", curthtread, usec);
+  }  
+
+  if(LIST_EMPTY(&ready))	//ou que la liste ne contient qu un element
+    return;
+  _swap_thread(curthread,scheduler);
 }
 
 // Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non

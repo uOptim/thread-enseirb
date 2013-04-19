@@ -7,12 +7,13 @@ then
 	if [ $test -eq 0 ] 
 	then printf "."
 	fi
-	echo -e "$i\t" >> tmp.dat;
-	/usr/bin/time -f"%e" ./$1 $i 2>> tmp.dat;
+	printf "$i\t" >> $1.dat;
+	time=`date +%s%N`
+	./$1 $i $j;
+	acttime=`date +%s%N`
+	let "newtime=$acttime-$time"
+	printf "$newtime\n" >> $1.dat
     done
-    tr "\n$" "\t" < tmp.dat > tmp2.dat;
-    sed 's/\([0-9]*\t[0-9]*\.[0-9]*\s\)/\1\n/g' tmp2.dat > $1.dat
-    rm tmp*.dat    
 elif [ $# -eq 3 ]
 then
     for i in `seq 1 $2` 
@@ -22,13 +23,15 @@ then
 	then printf "."
 	fi
 	for j in `seq 1 $3`
-	do echo -e "$i\t$j\t" >> tmp.dat;
-	    /usr/bin/time -f"%e" ./$1 $i $j 2>> tmp.dat;
+	do 
+	    printf"$i\t$j\t" >> $1.dat;
+	    time=`date +%s%N`
+	    ./$1 $i $j;
+	    acttime=`date +%s%N`
+	    let "newtime=$acttime-$time"
+	    printf "$newtime\n" >> $1.dat
 	done
     done
-    tr "\n$" "\t" < tmp.dat > tmp2.dat;
-    sed 's/\([0-9]*\t[0-9]*\t[0-9]*\.[0-9]*\s\)/\1\n/g' tmp2.dat > $1.dat
-    rm tmp*.dat    
 else 
     echo "Usage: $0 executable imax [jmax]"
     exit 1

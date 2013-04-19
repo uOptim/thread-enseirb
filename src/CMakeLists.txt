@@ -1,4 +1,5 @@
 add_library (thread thread.c)
+add_library (kthread kthread.c)
 
 add_executable (contextes contextes.c)
 

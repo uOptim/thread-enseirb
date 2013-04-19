@@ -1,5 +1,5 @@
-#include "thread.h"
 #include "queue.h"
+#include "thread.h"
 
 #include <stdlib.h>
 #include <ucontext.h>

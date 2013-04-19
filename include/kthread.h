@@ -11,6 +11,6 @@ struct kthread {
 	ucontext_t *ucp;
 };
 
-int kthread_create(struct kthread *, void *(*)(void *));
+int kthread_create(struct kthread *, int (*)(void *), void *);
 
 #endif

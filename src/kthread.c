@@ -9,9 +9,10 @@
 
 #define STACK_SIZE 1024*1024
 
-int kthread_create(struct kthread *kt, void *(*func)(void *))
+
+int kthread_create(struct kthread *kt, int (*func)(void *), void *arg)
 {
-	void *stack, *stacktop;
+	void *stack;
 
 	kt->mask = 0;
 
@@ -20,12 +21,11 @@ int kthread_create(struct kthread *kt, void *(*func)(void *))
 		return -1;
 	}
 
-	stacktop = stack + STACK_SIZE;
 	kt->pid = clone(
-		(int (*)(void *))func, stacktop, 
+		func, stack + STACK_SIZE, 
 		CLONE_SIGHAND | CLONE_VM | CLONE_THREAD | 
 		CLONE_FILES | CLONE_FS | CLONE_IO,
-		"truc"
+		arg
 	);
 
 	if (kt->pid == -1) {

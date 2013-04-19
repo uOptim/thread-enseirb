@@ -39,3 +39,5 @@ target_link_libraries (53-quicksort thread)
 add_executable (54-mergesort 54-mergesort.c)
 target_link_libraries (54-mergesort thread)
 
+add_executable (kthread_t kthread_t.c)
+target_link_libraries (kthread_t thread kthread)

@@ -7,8 +7,6 @@
 #include <valgrind/valgrind.h>
 
 
-static char init = 0;
-
 static struct thread mainthread;
 static struct thread *curthread  = &mainthread; // thread courrant
 static struct thread *nextthread = NULL;        // thread suivant schedulé
@@ -31,6 +29,7 @@ LIST_HEAD(tqueue, thread) ready, done;
 
 
 
+__attribute__((constructor))
 static void __init()
 {
 	mainthread.id = 0;
@@ -39,8 +38,6 @@ static void __init()
 	getcontext(&mainthread.uc);
 
 	LIST_INIT(&ready);
-
-	init = 1;
 }
 
 
@@ -73,8 +70,6 @@ static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
 
 thread_t thread_self(void)
 {
-	if (!init) __init();
-
 	return curthread;
 }
 
@@ -82,8 +77,6 @@ thread_t thread_self(void)
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 {
 	static unsigned int id = 1;
-
-	if (!init) __init();
 
 	*newthread = malloc(sizeof (struct thread));
 
@@ -119,8 +112,6 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 
 int thread_yield(void)
 {
-	if (!init) __init();
-
 	int rv = 0;
 	struct thread *self = thread_self();
 	
@@ -153,8 +144,6 @@ int thread_yield(void)
 
 int thread_join(thread_t thread, void **retval)
 {
-	if (!init) __init();
-
 	int rv = 0;
 
 	while (!thread->isdone) {
@@ -176,8 +165,6 @@ int thread_join(thread_t thread, void **retval)
 
 void thread_exit(void *retval)
 {
-	if (!init) __init();
-
 	struct thread *self = thread_self();
 
 	self->isdone = 1;

@@ -15,7 +15,7 @@
 #include "thread.h"
 
 #ifndef NBKTHREADS
-#define NBKTHREADS 1 // INCLUDING the main thread!
+#define NBKTHREADS 2 // INCLUDING the main thread!
 #endif
 
 #define CONTEXT_STACK_SIZE 64*1024 /* 64 KB stack size for contexts */
@@ -67,6 +67,20 @@ struct thread *_thread_new(void)
 }
 
 
+static void _add_job(struct thread *t)
+{
+	struct thread *tmp;
+	pthread_mutex_lock(&readymtx);
+	//fprintf(stderr, " ---- tailq add ---- \n");
+	TAILQ_INSERT_TAIL(&ready, t, threads);
+	//TAILQ_FOREACH(tmp, &ready, threads) {
+	//	fprintf(stderr, "\t thread in queue: %p - %d\n", tmp, tmp->tid);
+	//}
+	pthread_mutex_unlock(&readymtx);
+	sem_post(&nbready);
+}
+
+
 static struct thread *_get_job(void)
 {
 	struct thread *t, *tmp;
@@ -87,17 +101,27 @@ static struct thread *_get_job(void)
 }
 
 
-static void _add_job(struct thread *t)
+static void _release_job(struct thread *t)
 {
-	struct thread *tmp;
-	pthread_mutex_lock(&readymtx);
-	//fprintf(stderr, " ---- tailq add ---- \n");
-	TAILQ_INSERT_TAIL(&ready, t, threads);
-	//TAILQ_FOREACH(tmp, &ready, threads) {
-	//	fprintf(stderr, "\t thread in queue: %p - %d\n", tmp, tmp->tid);
-	//}
-	pthread_mutex_unlock(&readymtx);
-	sem_post(&nbready);
+	pthread_mutex_lock(&runningmtx);
+	TAILQ_REMOVE(&running, t, threads);
+	pthread_mutex_unlock(&runningmtx);
+
+	if (!t->isdone) {
+		_add_job(t);
+	}
+
+	pthread_mutex_unlock(&t->mtx);
+}
+
+
+static void _activate_job(struct thread *t)
+{
+	pthread_mutex_lock(&t->mtx);
+
+	pthread_mutex_lock(&runningmtx);
+	TAILQ_INSERT_TAIL(&running, t, threads);
+	pthread_mutex_unlock(&runningmtx);
 }
 
 
@@ -113,13 +137,11 @@ int _clone_func()
 		sem_wait(&nbready);
 
 		t = _get_job();
+		_activate_job(t);
 
 		t->tid = tid;
 		t->uc.uc_link = &uc;
 
-		pthread_mutex_lock(&runningmtx);
-		TAILQ_INSERT_TAIL(&running, t, threads);
-		pthread_mutex_unlock(&runningmtx);
 
 		swapcontext(&uc, &t->uc);
 	}
@@ -185,10 +207,7 @@ static void __init()
 
 	getcontext(&mainthread->uc);
 	mainthread->tid = syscall(SYS_gettid);
-
-	pthread_mutex_lock(&runningmtx);
-	TAILQ_INSERT_TAIL(&running, mainthread, threads);
-	pthread_mutex_unlock(&runningmtx);
+	_activate_job(mainthread);
 }
 
 
@@ -204,15 +223,18 @@ static void __destroy()
 		 if (t != mainthread) {
 			 free(t->uc.uc_stack.ss_sp);
 		 }
+		 pthread_mutex_destroy(&t->mtx);
 	     free(t);
      }
 
 	while (!TAILQ_EMPTY(&running)) {
 	     t = TAILQ_FIRST(&running);
 	     TAILQ_REMOVE(&running, t, threads);
+		 _release_job(t);
 		 if (t != mainthread) {
 			 free(t->uc.uc_stack.ss_sp);
 		 }
+		 pthread_mutex_destroy(&t->mtx);
 	     free(t);
      }
 
@@ -265,18 +287,12 @@ int thread_yield(void)
 	struct thread *t;
 	thread_t self = thread_self();
 
-	t = _get_job();
 
-	if (t != NULL) {
+	if (!sem_trywait(&nbready)) {
+		t = _get_job();
 
-		pthread_mutex_lock(&runningmtx);
-		TAILQ_REMOVE(&running, self, threads);
-		TAILQ_INSERT_TAIL(&running, t, threads);
-		pthread_mutex_unlock(&runningmtx);
-
-		if (!self->isdone) {
-			_add_job(self);
-		}
+		_release_job(self);
+		_activate_job(t);
 
 		t->tid = self->tid;
 		t->uc.uc_link = self->uc.uc_link;
@@ -301,8 +317,11 @@ int thread_join(thread_t thread, void **retval)
 {
 	int rv = 0;
 
+	pthread_mutex_lock(&thread->mtx);
 	while (!thread->isdone) {
+		pthread_mutex_unlock(&thread->mtx);
 		rv = thread_yield();
+		pthread_mutex_lock(&thread->mtx);
 	}
 
 	*retval = thread->retval;

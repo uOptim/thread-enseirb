@@ -22,6 +22,10 @@
 #define KTHREAD_STACK_SIZE 4*1024  /* 4 KB stack size for kernel threads */
 
 
+// hold pointers to stacks to free them in the destructor
+static void *kthread_stacks[NBKTHREADS];
+
+
 struct thread {
 	pid_t tid;
 	ucontext_t uc;
@@ -157,9 +161,11 @@ static void __init()
 		if (tid == -1) {
 			perror("clone");
 			free(stack);
+			kthread_stacks[i] = NULL;
 		} else {
 			// help valgrind
 			VALGRIND_STACK_REGISTER(stack, stack + KTHREAD_STACK_SIZE);
+			kthread_stacks[i] = stack;
 		}
 	}
 }
@@ -168,6 +174,13 @@ static void __init()
 __attribute__((destructor))
 static void __destroy()
 {
+	int i;
+
+	for (i = 0; i < NBKTHREADS; i++) {
+		if (kthread_stacks[i] != NULL) {
+			free(kthread_stacks[i]);
+		}
+	}
 }
 
 

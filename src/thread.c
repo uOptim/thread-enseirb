@@ -1,193 +1,168 @@
 #define _GNU_SOURCE
 #include <sched.h>
+#include <ucontext.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+
 #include <pthread.h>
 #include <semaphore.h>
-
-#include <unistd.h>      // gettid()
-#include <sys/syscall.h> // gettid()
+#include <valgrind/valgrind.h>
 
 #include "queue.h"
 #include "thread.h"
 
-#include <stdlib.h>
-#include <ucontext.h>
-
-#include <valgrind/valgrind.h>
-
 #ifndef NBKTHREADS
-#define NBKTHREADS 2
+#define NBKTHREADS 1
 #endif
 
-#define KTHREAD_STACK_SIZE 16*1024
-
-
-static struct thread mainthread;
-static void *stacks[NBKTHREADS];
+#define CONTEXT_STACK_SIZE 64*1024 /* 64 KB stack size for contexts */
+#define KTHREAD_STACK_SIZE 4*1024  /* 4 KB stack size for kernel threads */
 
 
 struct thread {
 	pid_t tid;
-	char isdone;
-	void *retval;
+	ucontext_t uc;
 
-	ucontext_t uc, prev;
-	LIST_ENTRY(thread) threads; // liste de threads
+	STAILQ_ENTRY(thread) threads;
 
 	int valgrind_stackid;
 };
 
-/* TESTING */
+
 sem_t nbready;
-pthread_mutex_t queuesmtx = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t readymtx   = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t runningmtx = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t donemtx    = PTHREAD_MUTEX_INITIALIZER;
+STAILQ_HEAD(threadqueue, thread) ready, running, done;
 
-/* Generation structure de liste doublement chainée des threads */
-LIST_HEAD(tqueue, thread) ready, running, done;
 
-
-static int kthread_func(void *stackp)
+/******************************************/
+/*       SOME UTILITY FUNCTIONS           */
+/******************************************/
+struct thread *_thread_new(void)
 {
-	struct thread *t = NULL;
+	struct thread *t;
 
-	fprintf(stderr, "Kernel thread created: tid = %ld!\n",
-			syscall(SYS_gettid));
+	if (NULL == (t = malloc(sizeof *t))) {
+		perror("malloc");
+		return NULL;
+	}
+
+	t->tid = 0; // will be replaced by the kernel thread's tid when scheduled
+
+	return t;
+}
+
+
+int _clone_func()
+{
+	pid_t tid;
+	ucontext_t uc;
+	struct thread *t;
+
+	tid = syscall(SYS_gettid);
 
 	while (1) {
 		sem_wait(&nbready);
-		fprintf(stderr, "Got a job!\n");
+		fprintf(stderr, "running job\n");
 
-		// prendre un job de la liste des threads ready
-		pthread_mutex_lock(&queuesmtx);
-		if (NULL == (t = LIST_FIRST(&ready))) {
-			break;
-			pthread_mutex_unlock(&queuesmtx);
-		}
-		LIST_REMOVE(t, threads);
-		LIST_INSERT_HEAD(&running, t, threads);
-		pthread_mutex_unlock(&queuesmtx);
+		// pick a new job
+		pthread_mutex_lock(&readymtx);
+		t = STAILQ_FIRST(&ready);
+		STAILQ_REMOVE_HEAD(&ready, threads);
+		pthread_mutex_unlock(&readymtx);
 
-		// exécuter
-		t->tid = syscall(SYS_gettid);
-		t->prev.uc_link = NULL;
-		t->prev.uc_stack.ss_sp = stackp;
-		t->prev.uc_stack.ss_size = KTHREAD_STACK_SIZE;
-		swapcontext(&t->prev, &t->uc);
-
-		// remettre dans une liste
-		pthread_mutex_lock(&queuesmtx);
-		LIST_REMOVE(t, threads);
-		if (t->isdone) {
-			LIST_INSERT_HEAD(&done, t, threads);
-		} else {
-			LIST_INSERT_HEAD(&ready, t, threads);
-			sem_post(&nbready);
-		}
-		pthread_mutex_unlock(&queuesmtx);
+		// run
+		t->tid = tid;
+		t->uc.uc_link = &uc;
+		swapcontext(&uc, &t->uc);
 	}
 
 	return 0;
 }
 
-__attribute__((constructor))
-void __init()
-{
-	mainthread.tid = syscall(SYS_gettid);
-	mainthread.isdone = 0;
-	mainthread.retval = NULL;
-	getcontext(&mainthread.uc);
 
-	LIST_INIT(&done);
-	LIST_INIT(&ready);
-	LIST_INIT(&running);
-
-	/* spawn a few kernel threads */
-	int i;
-	pid_t tid;
-	void *stack;
-	sem_init(&nbready, 1, 0);
-	for (i = 0; i < NBKTHREADS; i++) {
-
-		if (NULL == (stack = malloc(KTHREAD_STACK_SIZE))) {
-			perror("malloc");
-			continue;
-		}
-
-		tid = clone(
-			kthread_func, stack + KTHREAD_STACK_SIZE, 
-			CLONE_SIGHAND | CLONE_VM | CLONE_THREAD | CLONE_PTRACE |
-			CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_SYSVSEM,
-			stack
-		);
-
-		VALGRIND_STACK_REGISTER(stack, stack+KTHREAD_STACK_SIZE);
-
-		if (tid == -1) {
-			perror("clone");
-			free(stack);
-			continue;
-		}
-
-		stacks[i] = stack;
-	}
-}
-
-__attribute__((destructor))
-static void __destroy()
-{
-	int i;
-	for (i = 0; i < NBKTHREADS; i++) {
-		VALGRIND_STACK_DEREGISTER(stacks[i]);
-		free(stacks[i]);
-		stacks[i] = NULL;
-	}
-}
-
-
-// sert à capturer la valeur de retour des threads ne faisant pas de
-// thread_exit() mais un return
 static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
 {
 	void *retval;
 	retval = func(funcarg);
-	thread_exit(retval);
+	//thread_exit(retval);
 }
 
 
-thread_t thread_self(void)
+/******************************************/
+/*       CONSTRUCTOR & DESTRUCTOR         */
+/******************************************/
+__attribute__((constructor))
+static void __init()
 {
-	struct thread *t;
-	pid_t tid = syscall(SYS_gettid);
+	int i;
+	pid_t tid;
+	void *stack;
 
-	if (tid == mainthread.tid) {
-		return &mainthread;
-	}
+	fprintf(stderr, "INIT\n");
 
-	LIST_FOREACH(t, &running, threads) {
-		if (t->tid == tid) {
-			fprintf(stderr, "thread is running\n");
-			return t;
+	// nb of threads in the ready queue
+	sem_init(&nbready, 1, 0);
+
+	STAILQ_INIT(&running);
+	STAILQ_INIT(&ready);
+	STAILQ_INIT(&done);
+
+	// spawn kernel threads
+	for (i = 0; i < NBKTHREADS; i++) {
+
+		if (NULL == (stack = malloc(KTHREAD_STACK_SIZE))) {
+			perror("malloc");
+			break;
+		}
+
+		tid = clone(
+			_clone_func, stack + KTHREAD_STACK_SIZE, 
+			CLONE_SIGHAND | CLONE_VM | CLONE_THREAD | CLONE_PTRACE |
+			CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_SYSVSEM,
+			NULL
+		);
+		
+		if (tid == -1) {
+			perror("clone");
+			free(stack);
+		} else {
+			// help valgrind
+			VALGRIND_STACK_REGISTER(stack, stack + KTHREAD_STACK_SIZE);
 		}
 	}
-
-	fprintf(stderr, "Orphan thread tid = %d\n", tid);
-	return NULL;
 }
 
 
+__attribute__((destructor))
+static void __destroy()
+{
+}
+
+
+/******************************************/
+/*       IMPLEMENTATION FUNCTIONS         */
+/******************************************/
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 {
-	*newthread = malloc(sizeof (struct thread));
-
-	if (*newthread == NULL) {
-		perror("malloc");
+	if (NULL == (*newthread = _thread_new())){
 		return -1;
 	}
 
 	getcontext(&(*newthread)->uc);
-	(*newthread)->tid = 0;
-	(*newthread)->isdone = 0;
-	(*newthread)->retval = NULL;
 	(*newthread)->uc.uc_link = NULL;
-	(*newthread)->uc.uc_stack.ss_size = 64*1024;
+	(*newthread)->uc.uc_stack.ss_size = CONTEXT_STACK_SIZE;
+	(*newthread)->uc.uc_stack.ss_sp = malloc(CONTEXT_STACK_SIZE);
+
+	if (NULL == (*newthread)->uc.uc_stack.ss_sp) {
+		perror("malloc");
+		free(*newthread);
+		return -1;
+	}
 
 	(*newthread)->valgrind_stackid =
 		VALGRIND_STACK_REGISTER(
@@ -195,80 +170,60 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 			(*newthread)->uc.uc_stack.ss_sp
 			+ (*newthread)->uc.uc_stack.ss_size
 		);
-
-  	(*newthread)->uc.uc_stack.ss_sp = malloc(64*1024);
-
-  	makecontext(
+	
+	makecontext(
 		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
 	);
 
-	// ajoute un job
-	pthread_mutex_lock(&queuesmtx);
-	LIST_INSERT_HEAD(&ready, *newthread, threads);
-	pthread_mutex_unlock(&queuesmtx);
+	pthread_mutex_lock(&readymtx);
+	STAILQ_INSERT_TAIL(&ready, *newthread, threads);
+	pthread_mutex_unlock(&readymtx);
 	sem_post(&nbready);
 
 	return 0;
 }
 
-
 int thread_yield(void)
 {
-	int rv = 0;
-	struct thread *self = thread_self();
-	
-	// yield depuis le main
-	if (self == &mainthread) { 
-		;
-	} 
-
-	// yield depuis un thread != du main
-	else { 
-		rv = swapcontext(&self->uc, &self->prev);
-	}
-
-	return rv;
+	return 0;
 }
-
 
 int thread_join(thread_t thread, void **retval)
 {
-	int rv = 0;
-
-	while (!thread->isdone) {
-		rv = thread_yield();
-	}
-
-	*retval = thread->retval;
-
-	if (thread != &mainthread) {
-		// libérer ressource
-		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-		free(thread->uc.uc_stack.ss_sp);
-		free(thread);
-	}
-
-	return rv;
+	return 0;
 }
 
+thread_t thread_self(void)
+{
+	return NULL;
+}
 
 void thread_exit(void *retval)
 {
-	struct thread *self = thread_self();
-
-	self->isdone = 1;
-	self->retval = retval;
-
-	if (self != &mainthread) {
-		swapcontext(&self->uc, &self->prev);
-	}
-
-	else {
-		do {
-			thread_yield();
-		} while (!LIST_EMPTY(&ready));
-	}
-
-	exit(0);
+	return;
 }
 
+
+
+//int main(void)
+//{
+//	getcontext(&mainc);
+//	getcontext(&uc);
+//
+//	uc.uc_link = NULL;
+//	uc.uc_stack.ss_size = 64*1024;
+//	uc.uc_stack.ss_sp = malloc(64*1024);
+//
+//	VALGRIND_STACK_REGISTER(
+//		uc.uc_stack.ss_sp,
+//		uc.uc_stack.ss_sp + uc.uc_stack.ss_size
+//	);
+//
+//	makecontext(&uc, _context_func, 0);
+//
+//	void *stack = malloc(64*1024);
+//
+//	sleep(1);
+//
+//	return 0;
+//}

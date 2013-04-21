@@ -15,7 +15,7 @@
 #include "thread.h"
 
 #ifndef NBKTHREADS
-#define NBKTHREADS 1
+#define NBKTHREADS 1 // INCLUDING the main thread!
 #endif
 
 #define CONTEXT_STACK_SIZE 64*1024 /* 64 KB stack size for contexts */
@@ -23,27 +23,27 @@
 
 
 // hold pointers to stacks to free them in the destructor
-static void *kthread_stacks[NBKTHREADS];
-
+static void *kthread_stacks[NBKTHREADS-1];
 
 struct thread {
 	pid_t tid;
 	ucontext_t uc;
-	ucontext_t *uc_prev;
 
 	char isdone;
+	void *retval;
 
 	TAILQ_ENTRY(thread) threads;
 
+	pthread_mutex_t mtx;
 	int valgrind_stackid;
 };
 
+static struct thread *mainthread;
 
 sem_t nbready;
 pthread_mutex_t readymtx   = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t runningmtx = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t donemtx    = PTHREAD_MUTEX_INITIALIZER;
-TAILQ_HEAD(threadqueue, thread) ready, running, done;
+TAILQ_HEAD(threadqueue, thread) ready, running;
 
 
 /******************************************/
@@ -60,8 +60,44 @@ struct thread *_thread_new(void)
 
 	t->tid = 0; // will be replaced by the kernel thread's tid when scheduled
 	t->isdone = 0;
+	t->retval = NULL;
+	pthread_mutex_init(&t->mtx, NULL);
 
 	return t;
+}
+
+
+static struct thread *_get_job(void)
+{
+	struct thread *t, *tmp;
+
+	//fprintf(stderr, "================ get job ================\n");
+	pthread_mutex_lock(&readymtx);
+	t = TAILQ_FIRST(&ready);
+	if (t != NULL) {
+		//fprintf(stderr, " ---- tailq remove ---- \n");
+		TAILQ_REMOVE(&ready, t, threads);
+	}
+	//TAILQ_FOREACH(tmp, &ready, threads) {
+	//	fprintf(stderr, "\t thread in queue: %p - %d\n", tmp, tmp->tid);
+	//}
+	pthread_mutex_unlock(&readymtx);
+
+	return t;
+}
+
+
+static void _add_job(struct thread *t)
+{
+	struct thread *tmp;
+	pthread_mutex_lock(&readymtx);
+	//fprintf(stderr, " ---- tailq add ---- \n");
+	TAILQ_INSERT_TAIL(&ready, t, threads);
+	//TAILQ_FOREACH(tmp, &ready, threads) {
+	//	fprintf(stderr, "\t thread in queue: %p - %d\n", tmp, tmp->tid);
+	//}
+	pthread_mutex_unlock(&readymtx);
+	sem_post(&nbready);
 }
 
 
@@ -75,52 +111,28 @@ int _clone_func()
 
 	while (1) {
 		sem_wait(&nbready);
-		fprintf(stderr, "running job\n");
 
-		// pick a new job
-		pthread_mutex_lock(&readymtx);
-		t = TAILQ_FIRST(&ready);
-		TAILQ_REMOVE(&ready, t, threads);
-		pthread_mutex_unlock(&readymtx);
+		t = _get_job();
 
 		t->tid = tid;
-		t->uc_prev = &uc;
 		t->uc.uc_link = &uc;
 
 		pthread_mutex_lock(&runningmtx);
 		TAILQ_INSERT_TAIL(&running, t, threads);
 		pthread_mutex_unlock(&runningmtx);
 
-		// run
-		if (swapcontext(&uc, &t->uc)) {
-			perror("swapcontext");
-		}
-
-		pthread_mutex_lock(&runningmtx);
-		TAILQ_REMOVE(&running, t, threads);
-		pthread_mutex_unlock(&runningmtx);
-
-		if (t->isdone) {
-			pthread_mutex_lock(&donemtx);
-			TAILQ_INSERT_TAIL(&done, t, threads);
-			pthread_mutex_unlock(&donemtx);
-		} else {
-			pthread_mutex_lock(&readymtx);
-			TAILQ_INSERT_TAIL(&ready, t, threads);
-			pthread_mutex_unlock(&readymtx);
-			sem_post(&nbready);
-		}
+		swapcontext(&uc, &t->uc);
 	}
 
 	return 0;
 }
 
 
-static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
+static void _run(void *(*func)(void*), void *funcarg)
 {
 	void *retval;
 	retval = func(funcarg);
-	//thread_exit(retval);
+	thread_exit(retval);
 }
 
 
@@ -134,17 +146,14 @@ static void __init()
 	pid_t tid;
 	void *stack;
 
-	fprintf(stderr, "INIT\n");
-
 	// nb of threads in the ready queue
 	sem_init(&nbready, 1, 0);
 
 	TAILQ_INIT(&running);
 	TAILQ_INIT(&ready);
-	TAILQ_INIT(&done);
 
 	// spawn kernel threads
-	for (i = 0; i < NBKTHREADS; i++) {
+	for (i = 0; i < NBKTHREADS-1; i++) {
 
 		if (NULL == (stack = malloc(KTHREAD_STACK_SIZE))) {
 			perror("malloc");
@@ -168,6 +177,18 @@ static void __init()
 			kthread_stacks[i] = stack;
 		}
 	}
+
+	if (NULL == (mainthread = _thread_new())) {
+		fprintf(stderr, "Could not initilialize thread library\n");
+		exit(EXIT_FAILURE);
+	}
+
+	getcontext(&mainthread->uc);
+	mainthread->tid = syscall(SYS_gettid);
+
+	pthread_mutex_lock(&runningmtx);
+	TAILQ_INSERT_TAIL(&running, mainthread, threads);
+	pthread_mutex_unlock(&runningmtx);
 }
 
 
@@ -175,8 +196,27 @@ __attribute__((destructor))
 static void __destroy()
 {
 	int i;
+	struct thread *t;
 
-	for (i = 0; i < NBKTHREADS; i++) {
+	while (!TAILQ_EMPTY(&ready)) {
+	     t = TAILQ_FIRST(&ready);
+	     TAILQ_REMOVE(&ready, t, threads);
+		 if (t != mainthread) {
+			 free(t->uc.uc_stack.ss_sp);
+		 }
+	     free(t);
+     }
+
+	while (!TAILQ_EMPTY(&running)) {
+	     t = TAILQ_FIRST(&running);
+	     TAILQ_REMOVE(&running, t, threads);
+		 if (t != mainthread) {
+			 free(t->uc.uc_stack.ss_sp);
+		 }
+	     free(t);
+     }
+
+	for (i = 0; i < NBKTHREADS-1; i++) {
 		if (kthread_stacks[i] != NULL) {
 			free(kthread_stacks[i]);
 		}
@@ -212,28 +252,72 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 		);
 	
 	makecontext(
-		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
+		&(*newthread)->uc, (void (*)(void))_run, 3, func, funcarg
 	);
 
-	pthread_mutex_lock(&readymtx);
-	TAILQ_INSERT_TAIL(&ready, *newthread, threads);
-	pthread_mutex_unlock(&readymtx);
-	sem_post(&nbready);
-
+	_add_job(*newthread);
 	return 0;
 }
+
 
 int thread_yield(void)
 {
+	struct thread *t;
 	thread_t self = thread_self();
-	swapcontext(&self->uc, self->uc_prev);
+
+	t = _get_job();
+
+	if (t != NULL) {
+
+		pthread_mutex_lock(&runningmtx);
+		TAILQ_REMOVE(&running, self, threads);
+		TAILQ_INSERT_TAIL(&running, t, threads);
+		pthread_mutex_unlock(&runningmtx);
+
+		if (!self->isdone) {
+			_add_job(self);
+		}
+
+		t->tid = self->tid;
+		t->uc.uc_link = self->uc.uc_link;
+
+		return swapcontext(&self->uc, &t->uc);
+	}
+
+	else if (self->isdone) {
+		pthread_mutex_lock(&runningmtx);
+		TAILQ_REMOVE(&running, self, threads);
+		pthread_mutex_unlock(&runningmtx);
+
+		fprintf(stderr, "pouet\n");
+		//exit(EXIT_SUCCESS);
+	}
+
 	return 0;
 }
 
+
 int thread_join(thread_t thread, void **retval)
 {
-	return 0;
+	int rv = 0;
+
+	while (!thread->isdone) {
+		rv = thread_yield();
+	}
+
+	*retval = thread->retval;
+	pthread_mutex_unlock(&thread->mtx);
+
+	if (thread != mainthread) {
+		// libérer ressource
+		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
+		free(thread->uc.uc_stack.ss_sp);
+		free(thread);
+	}
+
+	return rv;
 }
+
 
 thread_t thread_self(void)
 {
@@ -252,13 +336,24 @@ thread_t thread_self(void)
 
 	if (t == NULL) {
 		fprintf(stderr, "ERROR: orphan thread\n");
+	//} else {
+	//	fprintf(stderr, 
+	//			"Thread %p\n\ttid = %d\n\tisdone = %d\n",
+	//			t, t->tid, t->isdone);
 	}
 
 	return t;
 }
 
+
 void thread_exit(void *retval)
 {
-	return;
+	thread_t self = thread_self();
+
+	self->isdone = 1;
+	self->retval = retval;
+	thread_yield();
+
+	exit(EXIT_SUCCESS);
 }
 

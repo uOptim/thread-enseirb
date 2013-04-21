@@ -8,6 +8,7 @@
 void *threadfunc(void *arg)
 {
 	thread_t t = thread_self();
+	thread_yield();
 	fprintf(stderr, "vrai thread: %p\n", t);
 	return NULL;
 }

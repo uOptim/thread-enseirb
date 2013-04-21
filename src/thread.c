@@ -27,7 +27,9 @@ struct thread {
 	ucontext_t uc;
 	ucontext_t *uc_prev;
 
-	STAILQ_ENTRY(thread) threads;
+	char isdone;
+
+	TAILQ_ENTRY(thread) threads;
 
 	int valgrind_stackid;
 };
@@ -37,7 +39,7 @@ sem_t nbready;
 pthread_mutex_t readymtx   = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t runningmtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t donemtx    = PTHREAD_MUTEX_INITIALIZER;
-STAILQ_HEAD(threadqueue, thread) ready, running, done;
+TAILQ_HEAD(threadqueue, thread) ready, running, done;
 
 
 /******************************************/
@@ -53,6 +55,7 @@ struct thread *_thread_new(void)
 	}
 
 	t->tid = 0; // will be replaced by the kernel thread's tid when scheduled
+	t->isdone = 0;
 
 	return t;
 }
@@ -72,8 +75,8 @@ int _clone_func()
 
 		// pick a new job
 		pthread_mutex_lock(&readymtx);
-		t = STAILQ_FIRST(&ready);
-		STAILQ_REMOVE_HEAD(&ready, threads);
+		t = TAILQ_FIRST(&ready);
+		TAILQ_REMOVE(&ready, t, threads);
 		pthread_mutex_unlock(&readymtx);
 
 		t->tid = tid;
@@ -81,11 +84,28 @@ int _clone_func()
 		t->uc.uc_link = &uc;
 
 		pthread_mutex_lock(&runningmtx);
-		STAILQ_INSERT_TAIL(&running, t, threads);
+		TAILQ_INSERT_TAIL(&running, t, threads);
 		pthread_mutex_unlock(&runningmtx);
 
 		// run
-		swapcontext(&uc, &t->uc);
+		if (swapcontext(&uc, &t->uc)) {
+			perror("swapcontext");
+		}
+
+		pthread_mutex_lock(&runningmtx);
+		TAILQ_REMOVE(&running, t, threads);
+		pthread_mutex_unlock(&runningmtx);
+
+		if (t->isdone) {
+			pthread_mutex_lock(&donemtx);
+			TAILQ_INSERT_TAIL(&done, t, threads);
+			pthread_mutex_unlock(&donemtx);
+		} else {
+			pthread_mutex_lock(&readymtx);
+			TAILQ_INSERT_TAIL(&ready, t, threads);
+			pthread_mutex_unlock(&readymtx);
+			sem_post(&nbready);
+		}
 	}
 
 	return 0;
@@ -115,9 +135,9 @@ static void __init()
 	// nb of threads in the ready queue
 	sem_init(&nbready, 1, 0);
 
-	STAILQ_INIT(&running);
-	STAILQ_INIT(&ready);
-	STAILQ_INIT(&done);
+	TAILQ_INIT(&running);
+	TAILQ_INIT(&ready);
+	TAILQ_INIT(&done);
 
 	// spawn kernel threads
 	for (i = 0; i < NBKTHREADS; i++) {
@@ -183,7 +203,7 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 	);
 
 	pthread_mutex_lock(&readymtx);
-	STAILQ_INSERT_TAIL(&ready, *newthread, threads);
+	TAILQ_INSERT_TAIL(&ready, *newthread, threads);
 	pthread_mutex_unlock(&readymtx);
 	sem_post(&nbready);
 
@@ -192,6 +212,8 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 
 int thread_yield(void)
 {
+	thread_t self = thread_self();
+	swapcontext(&self->uc, self->uc_prev);
 	return 0;
 }
 
@@ -208,7 +230,7 @@ thread_t thread_self(void)
 	tid = syscall(SYS_gettid);
 
 	pthread_mutex_lock(&runningmtx);
-	STAILQ_FOREACH(t, &running, threads) {
+	TAILQ_FOREACH(t, &running, threads) {
 		if (t->tid == tid) {
 			break;
 		}

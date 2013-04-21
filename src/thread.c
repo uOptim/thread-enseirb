@@ -25,6 +25,7 @@
 struct thread {
 	pid_t tid;
 	ucontext_t uc;
+	ucontext_t *uc_prev;
 
 	STAILQ_ENTRY(thread) threads;
 
@@ -75,9 +76,15 @@ int _clone_func()
 		STAILQ_REMOVE_HEAD(&ready, threads);
 		pthread_mutex_unlock(&readymtx);
 
-		// run
 		t->tid = tid;
+		t->uc_prev = &uc;
 		t->uc.uc_link = &uc;
+
+		pthread_mutex_lock(&runningmtx);
+		STAILQ_INSERT_TAIL(&running, t, threads);
+		pthread_mutex_unlock(&runningmtx);
+
+		// run
 		swapcontext(&uc, &t->uc);
 	}
 
@@ -195,7 +202,24 @@ int thread_join(thread_t thread, void **retval)
 
 thread_t thread_self(void)
 {
-	return NULL;
+	pid_t tid;
+	thread_t t = NULL;
+
+	tid = syscall(SYS_gettid);
+
+	pthread_mutex_lock(&runningmtx);
+	STAILQ_FOREACH(t, &running, threads) {
+		if (t->tid == tid) {
+			break;
+		}
+	}
+	pthread_mutex_unlock(&runningmtx);
+
+	if (t == NULL) {
+		fprintf(stderr, "ERROR: orphan thread\n");
+	}
+
+	return t;
 }
 
 void thread_exit(void *retval)
@@ -203,27 +227,3 @@ void thread_exit(void *retval)
 	return;
 }
 
-
-
-//int main(void)
-//{
-//	getcontext(&mainc);
-//	getcontext(&uc);
-//
-//	uc.uc_link = NULL;
-//	uc.uc_stack.ss_size = 64*1024;
-//	uc.uc_stack.ss_sp = malloc(64*1024);
-//
-//	VALGRIND_STACK_REGISTER(
-//		uc.uc_stack.ss_sp,
-//		uc.uc_stack.ss_sp + uc.uc_stack.ss_size
-//	);
-//
-//	makecontext(&uc, _context_func, 0);
-//
-//	void *stack = malloc(64*1024);
-//
-//	sleep(1);
-//
-//	return 0;
-//}

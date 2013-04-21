@@ -7,7 +7,8 @@
 
 void *threadfunc(void *arg)
 {
-	fprintf(stderr, "vrai thread!\n");
+	thread_t t = thread_self();
+	fprintf(stderr, "vrai thread: %p\n", t);
 	return NULL;
 }
 

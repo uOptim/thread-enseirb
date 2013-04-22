@@ -43,4 +43,5 @@ int thread_join(thread_t thread, void **retval);
  */
 void thread_exit(void *retval) __attribute__ ((__noreturn__));
 
+
 #endif /* __THREAD_H__ */

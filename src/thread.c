@@ -17,9 +17,6 @@ struct thread {
   char isdone;
   void *retval;
   
-  int state;
-  int type;
-  
   ucontext_t uc;
   LIST_ENTRY(thread) threads; // liste de threads
   
@@ -170,25 +167,6 @@ int thread_join(thread_t thread, void **retval)
 	}
 
 	return rv;
-}
-
-
-int thread_cancel(thread_t thread)
-{
-
-}
-
-int thread_setcancelstate(int state, int *oldstate = NULL)
-{
-  if (oldstate)
-    {
-      *oldstate = 
-    }
-}
-
-int thread_setcanceltype(int type, int *oldtype = NULL)
-{
-  
 }
 
 void thread_exit(void *retval)

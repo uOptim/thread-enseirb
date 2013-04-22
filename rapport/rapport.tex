@@ -22,7 +22,7 @@
 	\vspace{15mm}
 	\Huge{\textcolor{blue}{Projet de Système d'Exploitation }}
 } 
-\author{ BENOIT Amélie \\ BRISSET Clément \\ LANDEIRO DOS REIS Virgile \\ RABENJAMINA Samantha \\ RUELLE BENOIT}
+\author{ BENOIT Amélie \\ BRISSET Clément \\ LANDEIRO DOS REIS Virgile \\ RABENJAMINA Samantha \\ RUELLE Benoit}
 
 \date{
 	\normalsize{Enseignant encadrant : François TESSIER}
@@ -35,41 +35,20 @@
 \clearpage
 
 \section{Introduction et mise en route}
-
-- But et objectifs du projet \\
-
-Réponse aux questions, changement de contexte etc.
-En quoi ça nous a servi pour la suite
+\input{intro}
 
 \section{Développement de la bibliothèque}
-La première étape a été de récupérer le squelette du code de la bibliothèque de thread et de coder les fonctions nécessaire à son fonctionnement. Cette partie explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la façon dont nous les avons résolus.
-\subsection{Choix de programmations}
-- initalisation \\
-- choix de la liste \\
-- execution du programme d'exemple --> Valgrind\\
-- etc
-
-\subsection{Le cas du thread principal}
-
-Les tests qui nous sont fourni demandent à ce que le thread principal fasse
-des \verb!yield! vers des fils et un fils doit faire des \verb!yield! vers le
-thread principal. De plus, le thread principal doit pouvoir être utilisé dans
-la fonction \verb!thread_join()! tout en permettant aux autres threads de
-continuer à utiliser \verb!yield!.
+\input{developpement}
 
 \section{Tests de robustesse et de performance}
-\subsection{Les tests de base}
-\subsection{Tests implémentés}
-\subsubsection{Somme des éléments d'un tableau}
-\subsubsection{Les tris tableau}
+\input{tests}
 
-\clearpage
+
 \section{Réflexion sur les objectifs avancés}
-- Préemption : créer un thread ( !!! différent de notre bibliothèque (pthread) , sinon on ne pourra jamais ordonnancer) en parallèle du main qui ferait des getTimeofDay et lancerait une fonction thead\_schedule toutes les X millisecondes. Cette fonction passerait la main au thread suivant dans la liste.\\
+\input{avance}
 
-- Priorité -- une fois qu'on a géré la préemption ...
-\clearpage
+
 \section{Conclusion}
-
+\input{conclusion}
 
 \end{document}

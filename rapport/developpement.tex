@@ -1,0 +1,14 @@
+La première étape a été de récupérer le squelette du code de la bibliothèque de thread et de coder les fonctions nécessaire à son fonctionnement. Cette partie explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la façon dont nous les avons résolus.
+\subsection{Choix de programmations}
+- initalisation \\
+- choix de la liste \\
+- execution du programme d'exemple --> Valgrind\\
+- etc
+
+\subsection{Le cas du thread principal}
+
+Les tests qui nous sont fourni demandent à ce que le thread principal fasse
+des \verb!yield! vers des fils et un fils doit faire des \verb!yield! vers le
+thread principal. De plus, le thread principal doit pouvoir être utilisé dans
+la fonction \verb!thread_join()! tout en permettant aux autres threads de
+continuer à utiliser \verb!yield!.

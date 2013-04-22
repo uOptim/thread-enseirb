@@ -1,8 +1,16 @@
 \subsection{Les tests de base}
+
+Les tests fournis passent tous avec succès dans l'implémentation dépourvue des améliorations 'avancées' du sujet dont certaines sont en cours de développement.
+
+Des tests avec valgrind révèlent qu'il n'y a pas de fuite mémoire lors de l'exécution de ces tests exception faite de ceux qui ne réalisent pas de \verb!thread_join()! pour chaque thread créé via \verb!thread_create()!. C'est le cas du test faisant un \verb!thread_join()! sur le main.
+
+C'est un défaut qu'il nous est possible de corriger en testant la présence de threads non joins à la fin du programme (via un destructeur) mais cela pourrait entrer en conflit avec le code client qui pourrait potentiellement vouloir faire la même chose. Nous avons donc choisi de laisser à l'utilisateur de la bibliothèque le soin de terminer proprement chaque thread tout comme le fait déjà pthread (les ressources ne sont libérées qu'après un \verb!pthread_join()! pour les threads non détachés).
+
+
 \subsection{Tests implémentés}
 
 \subsubsection{Les tris de tableaux}
-Les algorithmes de tri de tableaux $tri rapide$ et $tri fusion$ ont été implémentées. Dans le cas du $tri rapide$, un thread est créé traîter chaque partie du tableau de part et d'autre du pivot. Pour le $tri fusion$, chaque fois qu'un tableau est divisé en deux, chaque partie est traitée par un nouveau thread.\\
+Les algorithmes de tri de tableaux $tri rapide$ et $tri fusion$ ont été implémentées. Dans le cas du $tri rapide$, un thread est créé traiter chaque partie du tableau de part et d'autre du pivot. Pour le $tri fusion$, chaque fois qu'un tableau est divisé en deux, chaque partie est traitée par un nouveau thread.\\
 
 %%%% resultats tests + include graphics %%%%
 %\begin{figure}[H]

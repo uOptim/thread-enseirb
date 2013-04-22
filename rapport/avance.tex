@@ -1,5 +1,6 @@
 \subsection{Support des machines multiprocesseur}
-L'implémentation des threads noyaux est en cours. La bibliothèque $pthread$ est celle qui à été choisie pour implémenter les threads noyaux.
+L'implémentation des threads noyaux est en cours. La bibliothèque $pthread$ est celle qui à été choisie pour implémenter les threads noyaux. Dans cette implémentation, les différents threads noyaux se partage les listes de threads utilisateurs en attentes (ready) et en cours d'éxécutions (running), ce qui permet d'accélérer le tratement des tâches.
+\indent A l'heure actuelle, seul le cas utilisant 2 threads noyaux est fonctionnelles, les cas à plus de threads sont encore à débugger, dues à des problèmes de concurrences.
 
 \subsection{Préemption}
 L'implémentation de la préemption est en cours. Nous avons utilisé la fonction $ualarm$ pour envoyer un signal d'alarme $SIGALRM$ à intervalles réguliers. Ce signal est bloqué par un gestionnaire de signaux initialisé en même temps que la bibliothèque $thread.h$. Le handler correspondant à ce gestionnaire est donc appelé et passe la main du contexte courant à un contexte spécialement dédié à l'ordonnancement. Ce contexte ordonnanceur passe la main au contexte suivant de la liste $ready$.\\
@@ -7,3 +8,5 @@ L'implémentation de la préemption est en cours. Nous avons utilisé la fonctio
 \indent Une fois la préemption fonctionnelle, nous envisageons de mettre en place la gestion des priorités. Elle sera réalisée grâce à la préemption, en donnant plus souvent la main aux processus de haute priorité.
  
 \subsection{Annulation d'un autre thread (thread\_cancel())}
+L'implémentation de l'annulation de thread vient de commencer, à l'heure actuelle, seul les fonctions de changement de type et d'état inspirées de la bibliothèque $pthread$ sont codées et fonctionnelles.
+\indent Avec l'annulation de thread terminée et fonctionnelle, il sera alors possible de s'attaquer au débordement de pile et à l'annulation des threads fautifs.

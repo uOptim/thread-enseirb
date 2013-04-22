@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <sys/syscall.h>
 
 #include <pthread.h>
@@ -15,7 +17,7 @@
 #include "thread.h"
 
 #ifndef NBKTHREADS
-#define NBKTHREADS 2 // INCLUDING the main thread!
+#define NBKTHREADS 4 // INCLUDING the main thread!
 #endif
 
 #define CONTEXT_STACK_SIZE 64*1024 /* 64 KB stack size for contexts */
@@ -24,10 +26,11 @@
 
 // hold pointers to stacks to free them in the destructor
 static void *kthread_stacks[NBKTHREADS-1];
+static pid_t kthread_tids[NBKTHREADS-1];
 
 struct thread {
 	pid_t tid;
-	ucontext_t uc;
+	ucontext_t uc, *uc_prev;
 
 	char isdone;
 	void *retval;
@@ -61,6 +64,7 @@ struct thread *_thread_new(void)
 	t->tid = 0; // will be replaced by the kernel thread's tid when scheduled
 	t->isdone = 0;
 	t->retval = NULL;
+	t->uc_prev = NULL;
 	pthread_mutex_init(&t->mtx, NULL);
 
 	return t;
@@ -69,7 +73,7 @@ struct thread *_thread_new(void)
 
 static void _add_job(struct thread *t)
 {
-	struct thread *tmp;
+	//struct thread *tmp;
 	pthread_mutex_lock(&readymtx);
 	//fprintf(stderr, " ---- tailq add ---- \n");
 	TAILQ_INSERT_TAIL(&ready, t, threads);
@@ -83,7 +87,7 @@ static void _add_job(struct thread *t)
 
 static struct thread *_get_job(void)
 {
-	struct thread *t, *tmp;
+	struct thread *t/*, *tmp*/;
 
 	//fprintf(stderr, "================ get job ================\n");
 	pthread_mutex_lock(&readymtx);
@@ -125,27 +129,52 @@ static void _activate_job(struct thread *t)
 }
 
 
-int _clone_func()
+static void _clone_sahandler(int signal)
+{
+	fprintf(stderr, "_clone_sahandler\n");
+	exit(EXIT_SUCCESS);
+}
+
+static int _clone_func()
 {
 	pid_t tid;
 	ucontext_t uc;
 	struct thread *t;
 
-	tid = syscall(SYS_gettid);
+	tid = getpid();
+	//fprintf(stderr, "clone: tid = %d\n", tid);
+	
+	// Install signal handler
+	struct sigaction sa;
+	sigemptyset(&sa.sa_mask);
+	sigaddset(&sa.sa_mask, SIGTERM);
+	sa.sa_flags = 0;
+	sa.sa_sigaction = NULL;
+	sa.sa_handler = _clone_sahandler;
+
+	sigaction(SIGTERM, &sa, NULL);
 
 	while (1) {
 		sem_wait(&nbready);
 
-		t = _get_job();
+		// NULL jobs are signals to quit
+		if (NULL == (t = _get_job())) {
+			break;
+		}
+
+		fprintf(stderr, "Got job\n");
+
 		_activate_job(t);
 
 		t->tid = tid;
-		t->uc.uc_link = &uc;
-
+		t->uc_prev = &uc;
 
 		swapcontext(&uc, &t->uc);
+
+		fprintf(stderr, "After pouet, hopefuly\n");
 	}
 
+	fprintf(stderr, "Clone dead\n");
 	return 0;
 }
 
@@ -168,11 +197,21 @@ static void __init()
 	pid_t tid;
 	void *stack;
 
-	// nb of threads in the ready queue
-	sem_init(&nbready, 1, 0);
-
 	TAILQ_INIT(&running);
 	TAILQ_INIT(&ready);
+
+	// nb of threads in the ready queue
+	sem_init(&nbready, 0, 0);
+
+	if (NULL == (mainthread = _thread_new())) {
+		fprintf(stderr, "Could not initilialize thread library\n");
+		exit(EXIT_FAILURE);
+	}
+
+	getcontext(&mainthread->uc);
+	_activate_job(mainthread);
+	mainthread->tid = syscall(SYS_gettid);
+	mainthread->uc_prev = &mainthread->uc;
 
 	// spawn kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
@@ -184,65 +223,87 @@ static void __init()
 
 		tid = clone(
 			_clone_func, stack + KTHREAD_STACK_SIZE, 
-			CLONE_SIGHAND | CLONE_VM | CLONE_THREAD | CLONE_PTRACE |
-			CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_SYSVSEM,
+			CLONE_SIGHAND | CLONE_VM | CLONE_PTRACE | CLONE_THREAD |
+			CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_SYSVSEM | SIGCHLD,
 			NULL
 		);
 		
 		if (tid == -1) {
 			perror("clone");
 			free(stack);
+			kthread_tids[i] = 0;
 			kthread_stacks[i] = NULL;
 		} else {
 			// help valgrind
 			VALGRIND_STACK_REGISTER(stack, stack + KTHREAD_STACK_SIZE);
 			kthread_stacks[i] = stack;
+			kthread_tids[i] = tid;
 		}
 	}
-
-	if (NULL == (mainthread = _thread_new())) {
-		fprintf(stderr, "Could not initilialize thread library\n");
-		exit(EXIT_FAILURE);
-	}
-
-	getcontext(&mainthread->uc);
-	mainthread->tid = syscall(SYS_gettid);
-	_activate_job(mainthread);
 }
 
 
 __attribute__((destructor))
 static void __destroy()
 {
-	int i;
+	int i, status;
 	struct thread *t;
 
-	while (!TAILQ_EMPTY(&ready)) {
-	     t = TAILQ_FIRST(&ready);
-	     TAILQ_REMOVE(&ready, t, threads);
-		 if (t != mainthread) {
-			 free(t->uc.uc_stack.ss_sp);
-		 }
-		 pthread_mutex_destroy(&t->mtx);
-	     free(t);
-     }
+	pid_t tgid = getpid();
+	pid_t tid = syscall(SYS_gettid);
 
-	while (!TAILQ_EMPTY(&running)) {
-	     t = TAILQ_FIRST(&running);
-	     TAILQ_REMOVE(&running, t, threads);
-		 _release_job(t);
-		 if (t != mainthread) {
-			 free(t->uc.uc_stack.ss_sp);
-		 }
-		 pthread_mutex_destroy(&t->mtx);
-	     free(t);
-     }
+	if (tid != mainthread->tid) {
+		fprintf(stderr, "bla\n");
+		return;
+	}
+
+	fprintf(stderr, "DESTROY\n");
+
+	for (i = 0; i < NBKTHREADS-1; i++) {
+		if (kthread_tids[i]) {
+			fprintf(stderr, "Killing tid = %d - tgid = %d\n",
+					kthread_tids[i], tgid);
+			if (syscall(SYS_tgkill, tgid, kthread_tids[i], SIGTERM)) {
+				perror("tgkill");
+				fprintf(stderr, "tid was %d\n", kthread_tids[i]);
+			}
+		}
+	}
+	
+	fprintf(stderr, "DESTROY2\n");
+
+	for (i = 0; i < NBKTHREADS-1; i++) {
+		if (kthread_tids[i]) {
+			waitpid(-tgid, &status, __WCLONE);
+		}
+	}
+
+	fprintf(stderr, "DESTROY3\n");
 
 	for (i = 0; i < NBKTHREADS-1; i++) {
 		if (kthread_stacks[i] != NULL) {
 			free(kthread_stacks[i]);
 		}
 	}
+
+	fprintf(stderr, "DESTROY4\n");
+
+	TAILQ_FOREACH(t, &ready, threads) {
+		if (t != mainthread) {
+			free(t);
+		}
+	}
+
+	TAILQ_FOREACH(t, &running, threads) {
+		_release_job(t);
+		if (t != mainthread) {
+			free(t);
+		}
+	}
+
+	mainthread->isdone = 1;
+	_release_job(mainthread);
+	free(mainthread);
 }
 
 
@@ -287,15 +348,18 @@ int thread_yield(void)
 	struct thread *t;
 	thread_t self = thread_self();
 
-
 	if (!sem_trywait(&nbready)) {
-		t = _get_job();
 
-		_release_job(self);
+		if (NULL == (t = _get_job())) {
+			return 1;
+		}
+
 		_activate_job(t);
 
 		t->tid = self->tid;
-		t->uc.uc_link = self->uc.uc_link;
+		t->uc_prev = self->uc_prev;
+
+		_release_job(self);
 
 		return swapcontext(&self->uc, &t->uc);
 	}
@@ -305,10 +369,19 @@ int thread_yield(void)
 		TAILQ_REMOVE(&running, self, threads);
 		pthread_mutex_unlock(&runningmtx);
 
-		fprintf(stderr, "pouet\n");
-		//exit(EXIT_SUCCESS);
+		_release_job(self);
+
+		if (self != mainthread) {
+			fprintf(stderr, "pouet != mainthread\n");
+			return swapcontext(&self->uc, self->uc_prev);
+		} else {
+			fprintf(stderr, "pouet == mainthread\n");
+			return _clone_func();
+		}
 	}
 
+	// no job ready, not done, so continue
+	fprintf(stderr, "nopouet\n");
 	return 0;
 }
 
@@ -330,6 +403,7 @@ int thread_join(thread_t thread, void **retval)
 	if (thread != mainthread) {
 		// libérer ressource
 		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
+		pthread_mutex_destroy(&thread->mtx);
 		free(thread->uc.uc_stack.ss_sp);
 		free(thread);
 	}
@@ -343,7 +417,7 @@ thread_t thread_self(void)
 	pid_t tid;
 	thread_t t = NULL;
 
-	tid = syscall(SYS_gettid);
+	tid = getpid();
 
 	pthread_mutex_lock(&runningmtx);
 	TAILQ_FOREACH(t, &running, threads) {

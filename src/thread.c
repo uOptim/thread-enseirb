@@ -37,9 +37,6 @@ static void __init()
 	mainthread.retval = NULL;
 	getcontext(&mainthread.uc);
 	
-	mainthread.state = THREAD_CANCEL_ENABLE;
-	mainthread.type = THREAD_CANCEL_DEFERRED;
-	
 	LIST_INIT(&ready);
 }
 
@@ -92,9 +89,6 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 	(*newthread)->id = id++;
 	(*newthread)->isdone = 0;
 	(*newthread)->retval = NULL;
-
-	(*newthread)->state = THREAD_CANCEL_ENABLE;
-	(*newthread)->type = THREAD_CANCEL_DEFERRED;
 
 	(*newthread)->uc.uc_link = &mainthread.uc;
 	(*newthread)->uc.uc_stack.ss_size = 64*1024;

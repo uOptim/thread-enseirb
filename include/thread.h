@@ -43,4 +43,9 @@ int thread_join(thread_t thread, void **retval);
  */
 void thread_exit(void *retval) __attribute__ ((__noreturn__));
 
+int thread_cancel(thread_t thread);
+int thread_setcancelstate(int state, int *oldstate);
+int thread_setcanceltype(int type, int *oldtype);
+
+  
 #endif /* __THREAD_H__ */

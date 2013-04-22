@@ -175,19 +175,32 @@ int thread_join(thread_t thread, void **retval)
 
 int thread_cancel(thread_t thread)
 {
-
+  
+  return 0;
 }
 
-int thread_setcancelstate(int state, int *oldstate = NULL)
+int thread_setcancelstate(int state, int *oldstate)
 {
   if (oldstate)
     {
-      *oldstate = 
+      *oldstate = thread_self()->state;
     }
+
+  thread_self()->state = state;
+
+  return 0;
 }
 
-int thread_setcanceltype(int type, int *oldtype = NULL)
+int thread_setcanceltype(int type, int *oldtype)
 {
+  if (oldtype)
+    {
+      *oldtype = thread_self()->type;
+    }
+
+  thread_self()->type = type;
+
+  return 0;
   
 }
 

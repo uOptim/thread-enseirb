@@ -15,14 +15,17 @@ static struct thread *nextthread = NULL;        // thread suivant schedulé
 
 
 struct thread {
-	unsigned int id;
-	char isdone;
-	void *retval;
-
-	ucontext_t uc;
-	LIST_ENTRY(thread) threads; // liste de threads
-
-	int valgrind_stackid;
+  unsigned int id;
+  char isdone;
+  void *retval;
+  
+  int state;
+  int type;
+  
+  ucontext_t uc;
+  LIST_ENTRY(thread) threads; // liste de threads
+  
+  int valgrind_stackid;
 };
 
 
@@ -37,7 +40,10 @@ static void __init()
 	mainthread.isdone = 0;
 	mainthread.retval = NULL;
 	getcontext(&mainthread.uc);
-
+	
+	mainthread.state = THREAD_CANCEL_ENABLE;
+	mainthread.type = THREAD_CANCEL_DEFERRED;
+	
 	LIST_INIT(&ready);
 
 	init = 1;
@@ -96,6 +102,10 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 	(*newthread)->id = id++;
 	(*newthread)->isdone = 0;
 	(*newthread)->retval = NULL;
+
+	(*newthread)->state = THREAD_CANCEL_ENABLE;
+	(*newthread)->type = THREAD_CANCEL_DEFERRED;
+
 	(*newthread)->uc.uc_link = &mainthread.uc;
 	(*newthread)->uc.uc_stack.ss_size = 64*1024;
 
@@ -173,6 +183,24 @@ int thread_join(thread_t thread, void **retval)
 	return rv;
 }
 
+
+int thread_cancel(thread_t thread)
+{
+
+}
+
+int thread_setcancelstate(int state, int *oldstate = NULL)
+{
+  if (oldstate)
+    {
+      *oldstate = 
+    }
+}
+
+int thread_setcanceltype(int type, int *oldtype = NULL)
+{
+  
+}
 
 void thread_exit(void *retval)
 {

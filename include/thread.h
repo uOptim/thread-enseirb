@@ -1,9 +1,13 @@
 #ifndef __THREAD_H__
 #define __THREAD_H__
 
+#include "queue.h"
 #include <stdio.h>
 
-#include "queue.h"
+#define THREAD_CANCEL_ENABLE       1
+#define THREAD_CANCEL_DISABLE      2
+#define THREAD_CANCEL_DEFERRED     3
+#define THREAD_CANCEL_ASYNCHRONOUS 4
 
 
 /* identifiant de thread */

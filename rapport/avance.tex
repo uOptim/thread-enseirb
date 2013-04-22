@@ -1,0 +1,6 @@
+\subsection{Préemption}
+L'implémentation de la préemption est en cours. Nous avons utilisé la fonction $ualarm$ pour envoyer un signal d'alarme $SIGALRM$ à intervalles réguliers. Ce signal est bloqué par un gestionnaire de signaux initialisé en même temps que la bibliothèque $thread.h$. Le handler correspondant à ce gestionnaire est donc appelé et passe la main du contexte courant à un contexte spécialement dédié à l'ordonnancement. Ce contexte ordonnanceur passe la main au contexte suivant de la liste $ready$.\\
+\indent Dans le cas particulier où la liste $ready$ est vide ou ne comprend qu'un seul thread, il n'est pas nécessaire d'avoir recours à la préemption. Il faut donc désactiver le gestionnaire correspondant à $SIGALRM$ jusqu'à ce qu'un nouveau thread soit inséré dans la liste.\\
+\indent Une fois la préemption fonctionnelle, nous envisageons de mettre en place la gestion des priorités. Elle sera réalisée grâce à la préemption, en donnant plus souvent la main aux processus de haute priorité.
+ 
+

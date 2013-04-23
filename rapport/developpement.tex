@@ -1,4 +1,4 @@
-La première étape a été de récupérer le squelette du code de la bibliothèque de thread et de coder les fonctions nécessaire à son fonctionnement. Cette partie explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la façon dont nous les avons résolus.
+La première étape a été de récupérer le squelette du code de la bibliothèque de thread et de coder les fonctions nécessaires à son fonctionnement. Cette partie explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la façon dont nous les avons résolus.
 
 \subsection{Choix de programmations}
 
@@ -9,4 +9,4 @@ Les listes de \verb!sys/queue.h! empruntées à BSD ont été retenues pour leur
 
 \subsection{Le cas du thread principal}
 
-La gestion du thread principal nécessite des opérations différentes des autres threads notamment lors de la libération de ressource ou de l'ordonnancement. En effet, les tests qui nous sont fourni demandent à ce que le thread principal fasse des \verb!yield! vers des fils et un fils doit faire des \verb!yield! vers le thread principal (cf. \verb!02-switch.c!). De plus, le thread principal doit pouvoir être utilisé dans la fonction \verb!thread_join()! tout en permettant aux autres threads de continuer à utiliser \verb!yield!.
+La gestion du thread principal nécessite des opérations différentes des autres threads notamment lors de la libération de ressources ou de l'ordonnancement. En effet, les tests qui nous sont fournis demandent à ce que le thread principal fasse des \verb!yield! vers des fils et un fils doit faire des \verb!yield! vers le thread principal (cf. \verb!02-switch.c!). De plus, le thread principal doit pouvoir être utilisé dans la fonction \verb!thread_join()! tout en permettant aux autres threads de continuer à utiliser \verb!yield!.

@@ -1,10 +1,10 @@
 \subsection{Support des machines multiprocesseur}
 
-L'implémentation des threads noyaux est en cours et se sert de l'appel système clone pour créer de nouveau threads dans le même thread group que le processus parent. Dans cette implémentation, les différents threads se partagent les listes de threads utilisateurs en attentes (ready) et en cours d'éxécutions (running).
+L'implémentation des threads noyaux est en cours et se sert de l'appel système clone pour créer de nouveaux threads dans le même thread group que le processus parent. Dans cette implémentation, les différents threads se partagent les listes de threads utilisateurs en attente (ready) et en cours d'éxécutions (running).
 
 Au démarrage, un certain nombre (décidé à la compilation) de threads noyaux sont créés et exécutent une boucle infinie allant chercher un contexte à exécuter dans une fifo "ready". Chaque contexte est responsable du lancement du contexte suivant (lors d'un yield ou d'un exit par exemple). Si aucun contexte n'est placé dans la file "ready", il y a retour à la boucle infinie attendant l'ajout d'un nouveau contexte à exécuter.
 
-Les problèmes d'accès concurents sont pour l'instant gérés avec des sémaphores et des mutex fournis par la bibliothèque pthread. S'il nous reste du temps, l'utilisation de futex est prévue afin de les remplacer.
+Les problèmes d'accès concurrents sont pour l'instant gérés avec des sémaphores et des mutex fournis par la bibliothèque pthread. S'il nous reste du temps, l'utilisation de futex est prévue afin de les remplacer.
 
 La destruction des threads noyaux est prise en charge par le destructeur (fonction \verb!__destroy()!) qui envoie une série de signaux SIGTERM aux threads issus de l'appel à clone avant de libérer les ressources qu'ils occupaient.
 
@@ -17,6 +17,6 @@ Dans le cas particulier où la liste $ready$ est vide ou ne comprend qu'un seul 
 Une fois la préemption fonctionnelle, nous envisageons de mettre en place la gestion des priorités. Elle sera réalisée grâce à la préemption, en donnant plus souvent la main aux processus de haute priorité.
  
 \subsection{Annulation d'un autre thread (thread\_cancel())}
-L'implémentation de l'annulation de thread vient de commencer, à l'heure actuelle, seul les fonctions de changement de type et d'état inspirées de la bibliothèque $pthread$ sont codées et fonctionnelles.
+L'implémentation de l'annulation de thread vient de commencer. A l'heure actuelle, seules les fonctions de changement de type et d'état inspirées de la bibliothèque $pthread$ sont codées et fonctionnelles.
 
 Avec l'annulation de thread terminée et fonctionnelle, il sera alors possible de s'attaquer au débordement de pile et à l'annulation des threads fautifs.

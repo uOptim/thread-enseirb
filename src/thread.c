@@ -1,6 +1,7 @@
 #include "thread.h"
 #include "queue.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <ucontext.h>
 #include <signal.h>
@@ -11,6 +12,7 @@
 
 
 static char init = 0;
+static struct sigaction alarm_scheduler;
 
 static struct thread mainthread;
 static struct thread *scheduler;
@@ -49,53 +51,55 @@ static void __init()
 	getcontext(&mainthread.uc);
 
 	LIST_INIT(&ready);
-
-	_initialize_thread(&scheduler, _schedule_thread, NULL);
-
 	init = 1;
 
-	ualarm(1000, 1000);
+	scheduler = malloc(sizeof(struct thread));
+	_initialize_thread(&scheduler, _schedule_thread, NULL);
 
-	struct sigaction sa;
-  	sa.sa_handler = _swap_scheduler;
-  	sa.sa_flags = 0;
-  
-  	sigemptyset(&sa.sa_mask);
-	sigaction(SIGALRM, &sa, NULL);
-	while (!LIST_EMPTY(&ready))
-	  sigsuspend(&sa.sa_mask);
+	ualarm(1000, 1000);
+		
+  	alarm_scheduler.sa_handler = _swap_scheduler;
+	alarm_scheduler.sa_sigaction = NULL;
+  	alarm_scheduler.sa_flags = 0;
+	sigemptyset(&alarm_scheduler.sa_mask);
+	sigaction(SIGALRM, &alarm_scheduler, NULL);
+
+	sigprocmask(SIG_UNBLOCK, &alarm_scheduler.sa_mask, NULL);  
 }
 
 
 static void* _schedule_thread(void* v){
-  printf("scheduler\n");
   while (!LIST_EMPTY(&ready)){
+    printf("scheduler\n");
     struct thread *self = thread_self();
     // màj thread suivant
     if (nextthread == NULL && !LIST_EMPTY(&ready)) {
       nextthread = LIST_FIRST(&ready);
     }
     else
-      nextthread = LIST_NEXT(&ready, threads);
+      nextthread = LIST_NEXT(self, threads);
     // donner la main au thread suivant
     gettimeofday(&tv, NULL);
     _swap_thread(self, nextthread);
-  }
-  return NULL;
+    }
+    return NULL;
 }
 
-static void _swap_scheduler() {
+static void _swap_scheduler (int signal) {
+ printf("swap\n"); 
+ sigprocmask(SIG_BLOCK, &alarm_scheduler.sa_mask, NULL);  
 
-  if (init) {
-    struct timeval tv2;
-  gettimeofday(&tv2, NULL);
-  unsigned long usec = (tv2.tv_sec-tv.tv_sec)*1000000 + (tv2.tv_usec-tv1.usec);
-  printf("thread %p: %d usec\n", curthtread, usec);
-  }  
-
+  /*  struct timeval tv2;
+      gettimeofday(&tv2, NULL);
+      unsigned long usec = (tv2.tv_sec-tv.tv_sec)*1000000 + (tv2.tv_usec-tv.tv_usec);*/
+  
+  struct thread *self = thread_self();
+  //printf("thread %p: %ld usec\n", self, usec); 
+  
   if(LIST_EMPTY(&ready))	//ou que la liste ne contient qu un element
     return;
-  _swap_thread(curthread,scheduler);
+  
+  _swap_thread(self,scheduler);
 }
 
 // Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non

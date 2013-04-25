@@ -20,18 +20,17 @@ static void * sum(void *arg)
 {
 	struct bundle *b = (struct bundle *) arg;
 
-	int err, middle;
-	void *res, *res1, *res2;
+	int err, res;
 	thread_t th1, th2;
-	struct bundle b1, b2;
 
 	if (b->end == b->start) {
-		res = (void *) b->array[b->start];
+		res = b->array[b->start];
 	}
 	
 	else {
-		middle = b->start + (b->end - b->start) / 2;
+		int middle = b->start + (b->end - b->start) / 2;
 
+		struct bundle b1, b2;
 		b1.array = b->array;
 		b1.start = b->start;
 		b1.end   = middle;
@@ -49,15 +48,16 @@ static void * sum(void *arg)
 		err = thread_create(&th2, sum, &b2);
 		assert(!err);
 
+		void *res1, *res2;
 		err = thread_join(th1, &res1);
 		assert(!err);
 		err = thread_join(th2, &res2);
 		assert(!err);
 
-		res = (void *) ((int) res1 + (int) res2);
+		res = (int) res1 + (int) res2;
 	}
 
-	return res;
+	return (void *) res;
 }
 
 

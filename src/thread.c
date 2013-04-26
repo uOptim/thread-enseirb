@@ -21,7 +21,7 @@
 #include "thread.h"
 
 #ifndef NBKTHREADS
-#define NBKTHREADS 10 // INCLUDING the main thread!
+#define NBKTHREADS 4 // INCLUDING the main thread!
 #endif
 
 #define CONTEXT_STACK_SIZE 64*1024 /* 64 KB stack size for contexts */
@@ -107,10 +107,7 @@ static struct thread *_get_job(void)
 static void _activate_job(struct thread *t)
 {
 	pthread_mutex_lock(&t->mtx);
-
-	pthread_mutex_lock(&jobsmtx);
 	jobs[GETTID % NBKTHREADS] = t;
-	pthread_mutex_unlock(&jobsmtx);
 }
 
 
@@ -120,22 +117,19 @@ static void _release_job(struct thread *t)
 		_add_job(t);
 	}
 
+	jobs[GETTID % NBKTHREADS] = NULL;
 	pthread_mutex_unlock(&t->mtx);
 }
 
 
 void _kthread_sighandler(int sig)
 {
-	// if we are running a job, then release it before exiting
 	thread_t self = thread_self();
 
-	if (self != NULL) {
-		if (pthread_mutex_trylock(&self->mtx) == EDEADLK) {
-			_release_job(self);
-		}
+	if (self) {
+		_release_job(self);
 	}
 
-	fprintf(stderr, "clone dead\n");
 	exit(EXIT_SUCCESS);
 }
 
@@ -151,7 +145,8 @@ static int _clone_func()
 
 		// NULL jobs are signals to quit
 		if (NULL == (t = _get_job())) {
-			continue;
+			fprintf(stderr, "Got NULL from _get_job()\n");
+			exit(EXIT_FAILURE);
 		}
 
 		_activate_job(t);
@@ -203,6 +198,9 @@ static void __init()
 	sigaddset(&sa.sa_mask, SIGTERM);
 	sigaction(SIGTERM, &sa, NULL);
 
+	getcontext(&mainthread->uc);
+	_activate_job(mainthread);
+
 	// spawn kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
 		kthread_tids[i] = 0;
@@ -221,7 +219,7 @@ static void __init()
 		tid = clone(
 			_clone_func, stack + KTHREAD_STACK_SIZE, 
 			CLONE_VM | CLONE_FILES | CLONE_FS | CLONE_SIGHAND | 
-			CLONE_SYSVSEM | SIGCHLD,
+			CLONE_SYSVSEM | CLONE_IO | SIGCHLD,
 			NULL
 		);
 		
@@ -235,17 +233,12 @@ static void __init()
 			kthread_tids[i] = tid;
 		}
 	}
-
-	getcontext(&mainthread->uc);
-	_activate_job(mainthread);
 }
 
 
 __attribute__((destructor))
 static void __destroy()
 {
-	fprintf(stderr, "destroy\n");
-
 	pid_t pid;
 	int i, status;
 	for (i = 0; i < NBKTHREADS-1; i++) {
@@ -255,20 +248,20 @@ static void __destroy()
 			if (kill(kthread_tids[i], SIGTERM)) {
 				perror("kill");
 			} else {
-				fprintf(stderr, "Waiting for clone %d\n", kthread_tids[i]);
+				//fprintf(stderr, "Waiting for clone %d\n", kthread_tids[i]);
 				pid = waitpid(kthread_tids[i], &status, 0);
 
 				// check waitpid return value
 				if (pid != kthread_tids[i]) {
 					perror("waitpid");
 				} else {
-					fprintf(stderr, "Clone %d dead\n", kthread_tids[i]);
+					//fprintf(stderr, "Clone %d dead\n", kthread_tids[i]);
 				}
 			}
 		}
 	}
 
-	fprintf(stderr, "All clones dead, cleaning up stacks etc...\n");
+	//fprintf(stderr, "All clones dead, cleaning up stacks etc...\n");
 }
 
 
@@ -348,13 +341,13 @@ int thread_join(thread_t thread, void **retval)
 
 	if (thread != mainthread) {
 		// libérer ressource
-		//VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-		//munmap(thread->uc.uc_stack.ss_sp, CONTEXT_STACK_SIZE);
+		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
+		munmap(thread->uc.uc_stack.ss_sp, CONTEXT_STACK_SIZE);
 	}
 
-	//pthread_mutex_unlock(&thread->mtx);
-	//pthread_mutex_destroy(&thread->mtx);
-	//free(thread);
+	pthread_mutex_unlock(&thread->mtx);
+	pthread_mutex_destroy(&thread->mtx);
+	free(thread);
 
 	return rv;
 }
@@ -362,13 +355,7 @@ int thread_join(thread_t thread, void **retval)
 
 thread_t thread_self(void)
 {
-	thread_t self;
-
-	pthread_mutex_lock(&jobsmtx);
-	self = jobs[GETTID % NBKTHREADS];
-	pthread_mutex_unlock(&jobsmtx);
-
-	return self;
+	return jobs[GETTID % NBKTHREADS];
 }
 
 

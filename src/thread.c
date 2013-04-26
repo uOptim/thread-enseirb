@@ -59,7 +59,7 @@ static void __init()
 	_initialize_thread(&scheduler, _schedule_thread, NULL);
 
 
-	
+	alarm_scheduler.sa_flags = SA_RESTART;
   	alarm_scheduler.sa_handler = &_swap_scheduler;
 	//alarm_scheduler.sa_sigaction = NULL;
 	sigfillset(&alarm_scheduler.sa_mask);
@@ -80,54 +80,64 @@ static void __init()
 
 static void* _schedule_thread(void* v){
   while (!LIST_EMPTY(&ready)){
-    printf("scheduler\n");
     struct thread *self = thread_self();
-    // màj thread suivant
+
+    // on récupère le thread suivant
+    nextthread = LIST_NEXT(last_scheduled, threads);
     
-      nextthread = LIST_NEXT(last_scheduled, threads);
-  	
-  	if (!nextthread || nextthread == NULL) {	
-  		if(LIST_EMPTY(&ready))
-  			printf("Ma liste est vide :(\n");
-    	printf("Je reviens au début de la liste \n");
-      	nextthread = LIST_FIRST(&ready);
+    /* 
+     * Si on arrive à la fin de la file 
+     * il faut boucler et revenir au début 
+     */
+    if (nextthread == NULL) {	
+      printf("Je reviens au début de la liste %p \n", nextthread);
+      nextthread = LIST_FIRST(&ready);
     }
-    printf("Mon adresse %p \n", nextthread);
-    // donner la main au thread suivant
+    printf("Mon adresse %p et self %p \n", nextthread, self);
+    
+    
     gettimeofday(&tv, NULL);
     sigdelset(&mask, SIGALRM);
+
+    // donner la main au thread suivant
     _swap_thread(self, nextthread);
-    }
-    return NULL;
+    printf("debug\n");
+  }
+  return NULL;
 }
 
 static int _contains_one_element(){
-  /*printf("Next element %p \n", LIST_NEXT(LIST_FIRST(&ready),threads) );
-	fflush(stdout);
-	return (LIST_NEXT(LIST_FIRST(&ready),threads) == NULL);*/
-  return 1;
+  printf(" -- ici %p \n", LIST_FIRST(&ready));
+  printf(" --- la %p \n", LIST_NEXT(LIST_FIRST(&ready),threads));
+  return (LIST_NEXT(LIST_FIRST(&ready),threads) == NULL);
 }
 
 
 static void _swap_scheduler (int signal) {
-	sigprocmask(0, NULL, &mask);
+  sigprocmask(0, NULL, &mask);
   /*  struct timeval tv2;
       gettimeofday(&tv2, NULL);
       unsigned long usec = (tv2.tv_sec-tv.tv_sec)*1000000 + (tv2.tv_usec-tv.tv_usec);*/
-  printf("pouett\n");
-  
   struct thread *self = thread_self();
   //printf("thread %p: %ld usec\n", self, usec); 
   
-  if(LIST_EMPTY(&ready) ){	//ou que la liste ne contient qu un element
-    printf("Je suis laaaaa \n");
+
+  /* Si la liste est vide ou ne contient qu'un element
+   * pas besoin de la préemption
+   */
+  if(LIST_EMPTY(&ready)){
+    printf("Je suis viiiide \n");
     fflush(stdout);
     return;
-}
-  last_scheduled = self;
-    
-    _swap_thread(self,scheduler);
+  }
+  else if(_contains_one_element()){
+    printf("J'ai un seul element !! \n");
+    fflush(stdout);
+    return;
+  }
 
+  last_scheduled = self; 
+  _swap_thread(self,scheduler);
 }
 
 // Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non

@@ -13,11 +13,13 @@
 
 static char init = 0;
 static struct sigaction alarm_scheduler;
-
+static sigset_t mask;
 static struct thread mainthread;
 static struct thread *scheduler;
 static struct thread *curthread  = &mainthread; // thread courrant
 static struct thread *nextthread = NULL;        // thread suivant schedulé
+
+static struct thread *last_scheduled; 
 
 static struct timeval tv;
 
@@ -56,15 +58,23 @@ static void __init()
 	scheduler = malloc(sizeof(struct thread));
 	_initialize_thread(&scheduler, _schedule_thread, NULL);
 
-	ualarm(1000, 1000);
-		
-  	alarm_scheduler.sa_handler = _swap_scheduler;
-	alarm_scheduler.sa_sigaction = NULL;
-  	alarm_scheduler.sa_flags = 0;
-	sigemptyset(&alarm_scheduler.sa_mask);
-	sigaction(SIGALRM, &alarm_scheduler, NULL);
 
-	sigprocmask(SIG_UNBLOCK, &alarm_scheduler.sa_mask, NULL);  
+	
+  	alarm_scheduler.sa_handler = &_swap_scheduler;
+	//alarm_scheduler.sa_sigaction = NULL;
+	sigfillset(&alarm_scheduler.sa_mask);
+
+	if(sigaction(SIGALRM, &alarm_scheduler, NULL) == -1 ){
+		perror("[ERROR] sigaction initialization");
+		exit(2);
+	}
+
+	sigprocmask(0, NULL, &mask);
+	
+	// unblock sigalrm
+	sigdelset(&mask, SIGALRM);
+	ualarm(2000, 2000);
+	sigsuspend(&mask);
 }
 
 
@@ -73,33 +83,51 @@ static void* _schedule_thread(void* v){
     printf("scheduler\n");
     struct thread *self = thread_self();
     // màj thread suivant
-    if (nextthread == NULL && !LIST_EMPTY(&ready)) {
-      nextthread = LIST_FIRST(&ready);
+    
+      nextthread = LIST_NEXT(last_scheduled, threads);
+  	
+  	if (!nextthread || nextthread == NULL) {	
+  		if(LIST_EMPTY(&ready))
+  			printf("Ma liste est vide :(\n");
+    	printf("Je reviens au début de la liste \n");
+      	nextthread = LIST_FIRST(&ready);
     }
-    else
-      nextthread = LIST_NEXT(self, threads);
+    printf("Mon adresse %p \n", nextthread);
     // donner la main au thread suivant
     gettimeofday(&tv, NULL);
+    sigdelset(&mask, SIGALRM);
     _swap_thread(self, nextthread);
     }
     return NULL;
 }
 
-static void _swap_scheduler (int signal) {
- printf("swap\n"); 
- sigprocmask(SIG_BLOCK, &alarm_scheduler.sa_mask, NULL);  
+static int _contains_one_element(){
+  /*printf("Next element %p \n", LIST_NEXT(LIST_FIRST(&ready),threads) );
+	fflush(stdout);
+	return (LIST_NEXT(LIST_FIRST(&ready),threads) == NULL);*/
+  return 1;
+}
 
+
+static void _swap_scheduler (int signal) {
+	sigprocmask(0, NULL, &mask);
   /*  struct timeval tv2;
       gettimeofday(&tv2, NULL);
       unsigned long usec = (tv2.tv_sec-tv.tv_sec)*1000000 + (tv2.tv_usec-tv.tv_usec);*/
+  printf("pouett\n");
   
   struct thread *self = thread_self();
   //printf("thread %p: %ld usec\n", self, usec); 
   
-  if(LIST_EMPTY(&ready))	//ou que la liste ne contient qu un element
+  if(LIST_EMPTY(&ready) ){	//ou que la liste ne contient qu un element
+    printf("Je suis laaaaa \n");
+    fflush(stdout);
     return;
-  
-  _swap_thread(self,scheduler);
+}
+  last_scheduled = self;
+    
+    _swap_thread(self,scheduler);
+
 }
 
 // Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non

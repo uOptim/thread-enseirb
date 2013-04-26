@@ -65,8 +65,8 @@ static void __init()
 	sigfillset(&alarm_scheduler.sa_mask);
 
 	if(sigaction(SIGALRM, &alarm_scheduler, NULL) == -1 ){
-		perror("[ERROR] sigaction initialization");
-		exit(2);
+	  perror("[ERROR] sigaction initialization");
+	  exit(2);
 	}
 
 	sigprocmask(0, NULL, &mask);

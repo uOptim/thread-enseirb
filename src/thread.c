@@ -99,9 +99,9 @@ static void _add_job(struct thread *t)
 {
 	pthread_mutex_lock(&readymtx);
 	TAILQ_INSERT_TAIL(&ready, t, threads);
+	pthread_mutex_unlock(&t->mtx);
 	pthread_mutex_unlock(&readymtx);
 
-	pthread_mutex_unlock(&t->mtx);
 	sem_post(&nbready);
 }
 
@@ -326,6 +326,7 @@ static void __destroy()
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
 	if (mainth) {
+		pthread_mutex_unlock(&mainth->mtx);
 		free(mainth);
 	}
 }
@@ -411,9 +412,11 @@ int thread_join(thread_t thread, void **retval)
 		// libérer ressource
 		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
 		free(thread->uc.uc_stack.ss_sp);
+		pthread_mutex_unlock(&thread->mtx);
 		free(thread);
 	} else {
 		// special case for the main thread (see __destroy)
+		pthread_mutex_unlock(&thread->mtx);
 		free(thread);
 		mainth = NULL;
 	}
@@ -459,8 +462,9 @@ void thread_exit(void *retval)
 		if (self != mainth) {
 			VALGRIND_STACK_DEREGISTER(self->valgrind_stackid);
 			//free(self->uc.uc_stack.ss_sp);
-			//free(self);
+			free(self);
 		} else {
+			// special case for mainth
 			free(self);
 			mainth = NULL;
 		}

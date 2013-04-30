@@ -178,7 +178,7 @@ static int _magicswap(struct thread *self, struct thread *th)
 		// caller may be NULL in the following scenario:
 		// th1 calls _magicswap and goes to sleep when calling swapcontext. It
 		// is then unlocked by th2 which he called. th2 adds th1 to the job
-		// queue. A thread that falled back to _clone_func unqueue th1 and
+		// queue. A thread that falled back to _clone_func dequeue th1 and
 		// resumes it.
 		if (caller) {
 			if (!caller->isdone) {
@@ -322,8 +322,6 @@ static void __init()
 			kthread_stacks[i] = stack;
 		}
 	}
-
-
 }
 
 
@@ -511,8 +509,5 @@ void thread_exit(void *retval)
 
 	// we should never reach this point
 	assert(0);
-
-	// only the main should reach this point
-	exit(EXIT_SUCCESS);
 }
 

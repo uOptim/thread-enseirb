@@ -40,13 +40,14 @@ struct kthread {
 	pid_t id; 
 	// this points to the 'struct thread' job currently running
 	struct thread *job;
+	// context of the kthread
+	ucontext_t uc;
 } runningjobs[NBKTHREADS];
 
 
 struct thread {
 	// uc = own context
-	// uc_prev = where to go on thread_exit()
-	ucontext_t uc, uc_prev;
+	ucontext_t uc;
 
 	char isdone;
 	void *retval;
@@ -58,6 +59,13 @@ struct thread {
 
 	pthread_mutex_t mtx;
 	int valgrind_stackid;
+
+	// NOTE:
+	// * When run, a thread will attempt to unlock whatever is pointed by
+	// caller. Make sure to set this to NULL if the swapcontext is done from
+	// the stack of a kernel thread as opposed to the stack of a context. If
+	// the swapcontext is done from another thread's context, make it point to
+	// that thread.
 };
 
 struct thread *mainth;
@@ -99,8 +107,9 @@ static void _add_job(struct thread *t)
 {
 	pthread_mutex_lock(&readymtx);
 	TAILQ_INSERT_TAIL(&ready, t, threads);
-	pthread_mutex_unlock(&t->mtx);
 	pthread_mutex_unlock(&readymtx);
+
+	pthread_mutex_unlock(&t->mtx);
 
 	sem_post(&nbready);
 }
@@ -141,7 +150,6 @@ static int _magicswap(struct thread *self, struct thread *th)
 		// init next job
 		th->caller = self;
 		th->runner = self->runner;
-		th->uc_prev = self->uc_prev;
 
 		// update kthread entry
 		self->runner->job = th;
@@ -159,7 +167,6 @@ static int _magicswap(struct thread *self, struct thread *th)
 		self = thread_self();
 		caller = self->caller;
 
-		assert(caller);
 		assert(!self->isdone);
 
 #ifdef SWAPINFO
@@ -168,11 +175,18 @@ static int _magicswap(struct thread *self, struct thread *th)
 		fprintf(stderr, "* releasing caller from Magicswap %p\n", caller);
 #endif
 
-		if (!caller->isdone) {
-			// add job will unlock the caller
-			_add_job(caller);
-		} else {
-			pthread_mutex_unlock(&caller->mtx);
+		// caller may be NULL in the following scenario:
+		// th1 calls _magicswap and goes to sleep when calling swapcontext. It
+		// is then unlocked by th2 which he called. th2 adds th1 to the job
+		// queue. A thread that falled back to _clone_func unqueue th1 and
+		// resumes it.
+		if (caller) {
+			if (!caller->isdone) {
+				// add job will unlock the caller
+				_add_job(caller);
+			} else {
+				pthread_mutex_unlock(&caller->mtx);
+			}
 		}
 	}
 
@@ -180,19 +194,14 @@ static int _magicswap(struct thread *self, struct thread *th)
 }
 
 
-static int _clone_func()
+static int _clone_func(void *arg)
 {
 	struct thread *t;
-	pid_t tid = GETTID;
+	struct kthread *kself;
 
-	struct kthread *kself; // point to a runningjobs entry
-
-	int i;
-	for (i = 0; i < NBKTHREADS; i++) {
-		if (runningjobs[i].id == tid) {
-			kself = &runningjobs[i];
-		}
-	}
+	// write our id to our assigned kthread entry
+	kself = (struct kthread *) arg;
+	kself->id = GETTID;
 
 	// main loop
 	while (1) {
@@ -220,7 +229,7 @@ static int _clone_func()
 		// swap
 		t->caller = NULL;
 		t->runner = kself;
-		swapcontext(&t->uc_prev, &t->uc);
+		swapcontext(&kself->uc, &t->uc);
 	}
 
 	return 0;
@@ -276,8 +285,13 @@ static void __init()
 	if (NULL == (mainth = _thread_new())) {
 		exit(EXIT_FAILURE);
 	}
-	mainth->uc_prev = mainth->uc;
 	mainth->runner = &runningjobs[0];
+
+	// init kthread entries
+	for (i = 0; i < NBKTHREADS; i++) {
+		runningjobs[i].id = 0;
+		runningjobs[i].job = NULL;
+	}
 
 	runningjobs[0].id = maintid;
 	runningjobs[0].job = mainth;
@@ -294,8 +308,8 @@ static void __init()
 		tid = clone(
 			_clone_func, stack + KTHREAD_STACK_SIZE, 
 			CLONE_VM | CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_IO |
-			CLONE_SYSVSEM | CLONE_THREAD | SIGCHLD,
-			NULL
+			CLONE_SYSVSEM | CLONE_THREAD,
+			&runningjobs[i+1] // runningjobs[0] given to the main kthread
 		);
 		
 		if (tid == -1) {
@@ -304,9 +318,8 @@ static void __init()
 		} else {
 			// help valgrind
 			VALGRIND_STACK_REGISTER(stack, stack + KTHREAD_STACK_SIZE);
+			// remember the pointer so we can free it later
 			kthread_stacks[i] = stack;
-			runningjobs[i+1].id = tid;
-			runningjobs[i+1].job = NULL;
 		}
 	}
 
@@ -486,12 +499,12 @@ void thread_exit(void *retval)
 #ifdef SWAPINFO
 				fprintf(stderr, "MAIN fall back to the infinite loop\n");
 #endif
-				_clone_func();
+				_clone_func(&runningjobs[0]);
 			} else {
 #ifdef SWAPINFO
 				fprintf(stderr, "CLONE fall back to the infinite loop\n");
 #endif
-				swapcontext(&self->uc, &self->uc_prev);
+				swapcontext(&self->uc, &self->runner->uc);
 			}
 		}
 	}

@@ -273,8 +273,7 @@ static void __init()
 	maintid = GETTID;
 
 	// add this thread to the list
-	struct thread *th;
-	if (NULL == (th = _thread_new())) {
+	if (NULL == (mainth = _thread_new())) {
 		exit(EXIT_FAILURE);
 	}
 	mainth->uc_prev = mainth->uc;
@@ -318,8 +317,17 @@ static void __init()
 __attribute__((destructor))
 static void __destroy()
 {
-	//fprintf(stderr, "DESTROY\n");
-	//fprintf(stderr, "All clones dead, cleaning up stacks etc...\n");
+	int i;
+
+	for (i = 0; i < NBKTHREADS-1; i++) {
+		free(kthread_stacks[i]);
+	}
+
+	// special case for the main thread that may not be joined or may not call
+	// thread_exit()
+	if (mainth) {
+		free(mainth);
+	}
 }
 
 
@@ -399,13 +407,16 @@ int thread_join(thread_t thread, void **retval)
 
 	*retval = thread->retval;
 
-	if (GETTID != maintid) {
+	if (thread != mainth) {
 		// libérer ressource
 		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-		munmap(thread->uc.uc_stack.ss_sp, CONTEXT_STACK_SIZE);
+		free(thread->uc.uc_stack.ss_sp);
+		free(thread);
+	} else {
+		// special case for the main thread (see __destroy)
+		free(thread);
+		mainth = NULL;
 	}
-
-	free(thread);
 
 	return rv;
 }
@@ -442,11 +453,24 @@ void thread_exit(void *retval)
 	pthread_mutex_unlock(&thcountmtx);
 
 	if (cond) {
+		// last thread just died, clean up
 		pthread_mutex_unlock(&self->mtx);
-		free(self);
-		//fprintf(stderr, "***** EXIT *****\n");
+
+		if (self != mainth) {
+			VALGRIND_STACK_DEREGISTER(self->valgrind_stackid);
+			//free(self->uc.uc_stack.ss_sp);
+			//free(self);
+		} else {
+			free(self);
+			mainth = NULL;
+		}
+
 		exit(EXIT_SUCCESS);
-	} else {
+	}
+
+	else {
+		// this wasn't the last thread, either swap to another thread if
+		// possible or fallback to the _clone_func to wait for new jobs.
 		if (!sem_trywait(&nbready)) {
 			next = _get_job();
 			assert(next != NULL);

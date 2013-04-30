@@ -133,6 +133,11 @@ static int _magicswap(struct thread *self, struct thread *th)
 		assert(th);
 		assert(!th->isdone);
 
+#ifdef SWAPINFO
+		fprintf(stderr, "* Magicswap in (tid %ld) %p --> %p\n",
+				GETTID, self, th);
+#endif
+
 		// init next job
 		th->caller = self;
 		th->runner = self->runner;
@@ -157,10 +162,12 @@ static int _magicswap(struct thread *self, struct thread *th)
 		assert(caller);
 		assert(!self->isdone);
 
-		//fprintf(stderr, "* Magicswap out (tid %ld) now in %p\n",
-				//GETTID, self);
+#ifdef SWAPINFO
+		fprintf(stderr, "* Magicswap out (tid %ld) now in %p\n",
+				GETTID, self);
+		fprintf(stderr, "* releasing caller from Magicswap %p\n", caller);
+#endif
 
-		//fprintf(stderr, "* releasing caller from Magicswap %p\n", caller);
 		if (!caller->isdone) {
 			// add job will unlock the caller
 			_add_job(caller);
@@ -192,9 +199,13 @@ static int _clone_func()
 		// release the job that called us if any
 		t = kself->job;
 		if (t != NULL) {
-			//fprintf(stderr, "* unlock from _clone_func\n");
+#ifdef SWAPINFO
+			fprintf(stderr, "* unlock from _clone_func %p\n", t);
+#endif
 			if (!t->isdone) {
 				_add_job(t);
+			} else {
+				pthread_mutex_unlock(&t->mtx);
 			}
 		}
 
@@ -224,10 +235,14 @@ static void _run(void *(*func)(void*), void *funcarg)
 	self = thread_self();
 	caller = self->caller;
 
+#ifdef SWAPINFO
 	fprintf(stderr, "Job %p started\n", self);
+#endif
 
 	if (caller) {
-		//fprintf(stderr, "* releasing caller from _run %p\n", caller);
+#ifdef SWAPINFO
+		fprintf(stderr, "* releasing caller from _run %p\n", caller);
+#endif
 		if (!caller->isdone) {
 			// add job will unlock the caller
 			_add_job(caller);
@@ -362,7 +377,9 @@ int thread_yield(void)
 		assert(next != NULL);
 		_magicswap(self, next);
 	} else {
-		//fprintf(stderr, "* yield: no other thread ready\n");
+#ifdef SWAPINFO
+		fprintf(stderr, "* yield: no other thread ready\n");
+#endif
 	}
 
 	return 0;
@@ -438,10 +455,14 @@ void thread_exit(void *retval)
 		
 		else {
 			if (GETTID == maintid) {
-				//fprintf(stderr, "MAIN fall back to the infinite loop\n");
+#ifdef SWAPINFO
+				fprintf(stderr, "MAIN fall back to the infinite loop\n");
+#endif
 				_clone_func();
 			} else {
-				//fprintf(stderr, "CLONE fall back to the infinite loop\n");
+#ifdef SWAPINFO
+				fprintf(stderr, "CLONE fall back to the infinite loop\n");
+#endif
 				swapcontext(&self->uc, &self->uc_prev);
 			}
 		}

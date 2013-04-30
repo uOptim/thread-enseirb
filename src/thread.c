@@ -35,6 +35,14 @@ static int maintid;
 static void *kthread_stacks[NBKTHREADS-1];
 
 
+struct kthread {
+	// this must be set ONLY ONCE and must be the return value of clone
+	pid_t id; 
+	// this points to the 'struct thread' job currently running
+	struct thread *job;
+} runningjobs[NBKTHREADS];
+
+
 struct thread {
 	// uc = own context
 	// uc_prev = where to go on thread_exit()
@@ -43,24 +51,19 @@ struct thread {
 	char isdone;
 	void *retval;
 
-	struct thread *caller;
+	struct thread *caller;  // points to the thread that called swapcontext
+	struct kthread *runner; // must point to an entry in 'runningjobs'
+
 	TAILQ_ENTRY(thread) threads;
 
 	pthread_mutex_t mtx;
 	int valgrind_stackid;
 };
 
-
-struct kthread {
-	pid_t id;
-	struct thread *job;
-};
-
-struct kthread runningjobs[NBKTHREADS];
+struct thread *mainth;
 
 sem_t nbready;
-unsigned int thcount = 1;
-pthread_cond_t thcountcond = PTHREAD_COND_INITIALIZER;
+unsigned int thcount = 1; // one thread at start time
 pthread_mutex_t thcountmtx = PTHREAD_MUTEX_INITIALIZER;
 
 TAILQ_HEAD(threadqueue, thread) ready;
@@ -79,11 +82,10 @@ struct thread *_thread_new(void)
 		return NULL;
 	}
 
-	//fprintf(stderr, "new thread: %p\n", t);
-
 	t->isdone = 0;
 	t->caller = NULL;
 	t->retval = NULL;
+	t->runner = NULL;
 	t->uc.uc_link = (void *) 0xdeadbeef;
 
 	pthread_mutex_init(&t->mtx, NULL);
@@ -122,31 +124,22 @@ static struct thread *_get_job(void)
 
 
 // Threads MUST call this function instead of swapcontext
-static int _magicswap(struct thread *th)
+static int _magicswap(struct thread *self, struct thread *th)
 {
 	int rv;
-	pid_t tid = GETTID;
-	struct thread *self, *caller;
+	struct thread *caller;
 
 	{ /* in the calling thread */
-		self = thread_self();
-
+		assert(th);
 		assert(!th->isdone);
 
 		// init next job
 		th->caller = self;
+		th->runner = self->runner;
 		th->uc_prev = self->uc_prev;
 
-		//fprintf(stderr, "* Magicswap in (tid %ld) %p --> %p\n",
-				//GETTID, self, th);
-
-		// let the successor know who he is
-		int i;
-		for (i = 0; i < NBKTHREADS; i++) {
-			if (runningjobs[i].id == tid) {
-				runningjobs[i].job = th;
-			}
-		}
+		// update kthread entry
+		self->runner->job = th;
 	}
 
 	// POOF 
@@ -161,6 +154,7 @@ static int _magicswap(struct thread *th)
 		self = thread_self();
 		caller = self->caller;
 
+		assert(caller);
 		assert(!self->isdone);
 
 		//fprintf(stderr, "* Magicswap out (tid %ld) now in %p\n",
@@ -184,9 +178,19 @@ static int _clone_func()
 	struct thread *t;
 	pid_t tid = GETTID;
 
+	struct kthread *kself; // point to a runningjobs entry
+
+	int i;
+	for (i = 0; i < NBKTHREADS; i++) {
+		if (runningjobs[i].id == tid) {
+			kself = &runningjobs[i];
+		}
+	}
+
 	// main loop
 	while (1) {
-		t = thread_self();
+		// release the job that called us if any
+		t = kself->job;
 		if (t != NULL) {
 			//fprintf(stderr, "* unlock from _clone_func\n");
 			if (!t->isdone) {
@@ -199,20 +203,14 @@ static int _clone_func()
 		t = _get_job();
 		assert(t != NULL);
 
-		int i;
-		for (i = 0; i < NBKTHREADS; i++) {
-			if (runningjobs[i].id == tid) {
-				runningjobs[i].job = t;
-			}
-		}
+		// update kthread entry
+		kself->job = t;
 
 		// swap
 		t->caller = NULL;
-		//fprintf(stderr, "* clone swapping\n");
+		t->runner = kself;
 		swapcontext(&t->uc_prev, &t->uc);
 	}
-
-	//fprintf(stderr, "clone dead\n");
 
 	return 0;
 }
@@ -238,7 +236,9 @@ static void _run(void *(*func)(void*), void *funcarg)
 		}
 	}
 
-	thread_exit(func(funcarg));
+	void *retval;
+	retval = func(funcarg);
+	thread_exit(retval);
 }
 
 
@@ -262,10 +262,11 @@ static void __init()
 	if (NULL == (th = _thread_new())) {
 		exit(EXIT_FAILURE);
 	}
-	th->uc_prev = th->uc;
+	mainth->uc_prev = mainth->uc;
+	mainth->runner = &runningjobs[0];
 
-	runningjobs[0].job = th;
 	runningjobs[0].id = maintid;
+	runningjobs[0].job = mainth;
 
 	// spawn more kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
@@ -359,7 +360,7 @@ int thread_yield(void)
 	if (!sem_trywait(&nbready)) {
 		next = _get_job();
 		assert(next != NULL);
-		_magicswap(next);
+		_magicswap(self, next);
 	} else {
 		//fprintf(stderr, "* yield: no other thread ready\n");
 	}
@@ -432,7 +433,7 @@ void thread_exit(void *retval)
 		if (!sem_trywait(&nbready)) {
 			next = _get_job();
 			assert(next != NULL);
-			_magicswap(next);
+			_magicswap(self, next);
 		}
 		
 		else {

@@ -13,14 +13,11 @@
 
 static char init = 0;
 static struct sigaction alarm_scheduler;
+
 static struct thread mainthread;
-static struct thread *scheduler;
 static struct thread *curthread  = &mainthread; // thread courrant
 static struct thread *nextthread = NULL;        // thread suivant schedulé
 
-static struct thread *last_scheduled; 
-
-static struct timeval tv;
 
 struct thread {
 	unsigned int id;
@@ -37,10 +34,9 @@ struct thread {
 /* Generation structure de liste doublement chainée des threads */
 LIST_HEAD(tqueue, thread) ready, done;
 
-static int _swap_thread(struct thread *th1, struct thread *th2);
-static void _swap_scheduler(int sig);
-static int _initialize_thread(thread_t *newthread, void* (*func)(void*), void *funcarg);
-static void* _schedule_thread(void*);
+			  static int _swap_thread(struct thread *th1, struct thread *th2);
+			  static void _swap_scheduler(int sig);
+			  static int _initialize_thread(thread_t *newthread, void* (*func)(void*), void *funcarg);
 
 
 
@@ -54,95 +50,59 @@ static void __init()
 	LIST_INIT(&ready);
 	init = 1;
 
-	scheduler = malloc(sizeof *scheduler);
-	_initialize_thread(&scheduler, _schedule_thread, NULL);
-
 	alarm_scheduler.sa_flags = SA_RESTART;
   	alarm_scheduler.sa_handler = _swap_scheduler;
-	sigemptyset(&alarm_scheduler.sa_mask);
+	sigfillset(&alarm_scheduler.sa_mask);
 	sigaddset(&alarm_scheduler.sa_mask, SIGALRM);
 
 	if(sigaction(SIGALRM, &alarm_scheduler, NULL) == -1 ){
 	  perror("[ERROR] sigaction initialization");
 	  exit(2);
 	}
-
-	ualarm(2000, 2000);
+	
+	ualarm(200000, 200000);
 }
 
 
-static void* _schedule_thread(void* v)
+
+
+int _thread_yield(void)
 {
-	while (!LIST_EMPTY(&ready)){
-		struct thread *self = thread_self();
+	if (!init) __init();
+	int rv = 0;
+	struct thread *self = thread_self();
 
-		// on récupère le thread suivant
-		nextthread = LIST_NEXT(last_scheduled, threads);
+	//cas où on arrive en bout de liste : on reboucle sur la tete
+	if (nextthread == NULL && !LIST_EMPTY(&ready)) {
+	  nextthread = LIST_FIRST(&ready);
+	}
+	else
+	  nextthread = LIST_NEXT(self, threads);
 
-		if (nextthread == NULL) {	
-			nextthread = LIST_FIRST(&ready);
-		}
+	// swapcontext si thread schedulé
+	if (nextthread != NULL) {
+	  rv = _swap_thread(self, nextthread);
 
-		gettimeofday(&tv, NULL);
-
-		// donner la main au thread suivant
-		last_scheduled = nextthread; 
-		_swap_thread(self, nextthread);
 	}
 
-	return NULL;
+	return rv;
 }
-
-static int _contains_one_element(){
-//  printf(" -- ici %p \n", LIST_FIRST(&ready));
-//  printf(" --- la %p \n", LIST_NEXT(LIST_FIRST(&ready),threads));
-  return (LIST_NEXT(LIST_FIRST(&ready),threads) == NULL);
-}
-
 
 static void _swap_scheduler (int signal) {
-
-	sigset_t ignore, old;
-	sigfillset(&ignore);
-
-	// bloquer tous les signaux
-	sigprocmask(SIG_SETMASK, &ignore, &old);
-
-	/*  struct timeval tv2;
-		gettimeofday(&tv2, NULL);
-		unsigned long usec = (tv2.tv_sec-tv.tv_sec)*1000000 + (tv2.tv_usec-tv.tv_usec);*/
-	struct thread *self = thread_self();
-	//printf("thread %p: %ld usec\n", self, usec); 
-
-
-	/* Si la liste est vide ou ne contient qu'un element
-	 * pas besoin de la préemption
-	 */
-	if(LIST_EMPTY(&ready)){
-		printf("Je suis viiiide \n");
-		fflush(stdout);
-		sigprocmask(SIG_SETMASK, &old, NULL);
-		return;
-	}
-
-	else if(_contains_one_element()){
-		printf("J'ai un seul element !! \n");
-		fflush(stdout);
-		sigprocmask(SIG_SETMASK, &old, NULL);
-		return;
-	}
-
-	sigprocmask(SIG_SETMASK, &old, NULL);
-	_swap_thread(self,scheduler);
+  printf("coucouc \n");
+  _thread_yield();
+  
 }
+
 
 // Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non
 // mis à jour.
 static int _swap_thread(struct thread *th1, struct thread *th2)
 {
+
 	int rv = 0;
 	curthread = th2;
-
+	
 	rv = swapcontext(&th1->uc, &th2->uc);
 
 	if (rv) {
@@ -221,21 +181,22 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 
 int thread_yield(void)
 {
+
 	if (!init) __init();
 
 	int rv = 0;
+
 	struct thread *self = thread_self();
-	
+
 	// yield depuis le main
 	if (self == &mainthread) { 
 	        //cas où on arrive en bout de liste : on reboucle sur la tete
 		if (nextthread == NULL && !LIST_EMPTY(&ready)) {
-			nextthread = LIST_FIRST(&ready);
+		  nextthread = LIST_FIRST(&ready);
 		}
-
 		// swapcontext si thread schedulé
 		if (nextthread != NULL) {
-			rv = _swap_thread(self, nextthread);
+		  rv = _swap_thread(self, nextthread);
 		}
 		
 		// sinon ne rien faire (rester dans main)
@@ -284,18 +245,18 @@ void thread_exit(void *retval)
 
 	self->isdone = 1;
 	self->retval = retval;
-
+	
 	if (self != &mainthread) {
 		// màj thread suivant
 		nextthread = LIST_NEXT(self, threads);
-		LIST_REMOVE(self, threads);
+			LIST_REMOVE(self, threads);
 
 		// repasser au main
 		_swap_thread(self, &mainthread);
 	}
 
 	else {
-		do {
+		do {		  
 			thread_yield();
 		} while (!LIST_EMPTY(&ready));
 	}

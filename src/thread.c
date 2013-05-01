@@ -107,9 +107,9 @@ static void _add_job(struct thread *t)
 {
 	pthread_mutex_lock(&readymtx);
 	TAILQ_INSERT_TAIL(&ready, t, threads);
+	pthread_mutex_unlock(&t->mtx);
 	pthread_mutex_unlock(&readymtx);
 
-	pthread_mutex_unlock(&t->mtx);
 
 	sem_post(&nbready);
 }
@@ -277,6 +277,7 @@ static void __init()
 	void *stack;
 
 	TAILQ_INIT(&ready);
+	sem_init(&nbready, 0, 0);
 
 	// remember which thread started everything
 	maintid = GETTID;

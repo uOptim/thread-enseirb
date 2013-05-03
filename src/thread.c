@@ -5,10 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
-#include <sys/wait.h>
 #include <sys/syscall.h>
 
-#include <errno.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <valgrind/valgrind.h>
@@ -316,6 +314,12 @@ static void __init()
 __attribute__((destructor))
 static void __destroy()
 {
+	int i;
+
+	for (i = 0; i < NBKTHREADS-1; i++) {
+		pthread_cancel(kthreads[i]);
+	}
+
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
 	if (mainth) {

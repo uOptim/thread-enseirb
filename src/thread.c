@@ -1,12 +1,10 @@
 #define _GNU_SOURCE
-#include <sched.h>
 #include <ucontext.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
-#include <sys/mman.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
 
@@ -31,13 +29,12 @@
 
 static int maintid;
 
-// hold pointers to stacks to free them in the destructor
-static void *kthread_stacks[NBKTHREADS-1];
+pthread_t kthreads[NBKTHREADS-1];
 
 
 struct kthread {
 	// this must be set ONLY ONCE and must be the return value of clone
-	pid_t id;
+	pid_t id; 
 	// this points to the 'struct thread' job currently running
 	struct thread *job;
 	// context of the kthread
@@ -77,14 +74,6 @@ pthread_mutex_t thcountmtx = PTHREAD_MUTEX_INITIALIZER;
 TAILQ_HEAD(threadqueue, thread) ready;
 pthread_mutex_t readymtx = PTHREAD_MUTEX_INITIALIZER;
 
-// NOTE: after hours of debugging, I found out that pthread does additionnal
-// stuff to make malloc aware of concurrent memory allocation and that
-// bypassing this by using clone() makes malloc unaware of multiple memory
-// allocation request at the same time which causes deadlocks (from malloc's
-// internals) among other problems such as heap corruption. A quick and dirty
-// way is to force one malloc at a time with the following mutex.
-pthread_mutex_t mallocmtx = PTHREAD_MUTEX_INITIALIZER;
-
 
 /******************************************/
 /*       SOME UTILITY FUNCTIONS           */
@@ -93,9 +82,7 @@ struct thread *_thread_new(void)
 {
 	struct thread *t;
 
-	pthread_mutex_lock(&mallocmtx);
 	t = malloc(sizeof *t);
-	pthread_mutex_unlock(&mallocmtx);
 
 	if (NULL == t) {
 		perror("malloc");
@@ -168,7 +155,7 @@ static int _magicswap(struct thread *self, struct thread *th)
 		self->runner->job = th;
 	}
 
-	// POOF
+	// POOF 
 	rv = swapcontext(&self->uc, &th->uc);
 
 	if (rv) {
@@ -209,7 +196,7 @@ static int _magicswap(struct thread *self, struct thread *th)
 }
 
 
-static int _clone_func(void *arg)
+static void * _clone_func(void *arg)
 {
 	struct thread *t;
 	struct kthread *kself;
@@ -247,7 +234,7 @@ static int _clone_func(void *arg)
 		swapcontext(&kself->uc, &t->uc);
 	}
 
-	return 0;
+	pthread_exit(NULL);
 }
 
 
@@ -287,9 +274,7 @@ static void _run(void *(*func)(void*), void *funcarg)
 __attribute__((constructor(101)))
 static void __init()
 {
-	int i;
-	pid_t tid;
-	void *stack;
+	int i, rv;
 
 	TAILQ_INIT(&ready);
 	sem_init(&nbready, 1, 0);
@@ -314,33 +299,16 @@ static void __init()
 
 	// spawn more kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
-		kthread_stacks[i] = NULL;
-
-		pthread_mutex_lock(&mallocmtx);
-		if (NULL == (stack = malloc(KTHREAD_STACK_SIZE))) {
-			perror("malloc");
-			exit(EXIT_FAILURE);
-		}
-		pthread_mutex_unlock(&mallocmtx);
-
-		tid = clone(
-			_clone_func, stack + KTHREAD_STACK_SIZE,
-			CLONE_VM | CLONE_FILES | CLONE_FS | CLONE_SIGHAND | CLONE_IO |
-			CLONE_SYSVSEM | CLONE_THREAD,
-			&runningjobs[i+1] // runningjobs[0] given to the main kthread
+		rv = pthread_create(
+			&kthreads[i], NULL, _clone_func, &runningjobs[i+1]
 		);
 
-		if (tid == -1) {
-			perror("clone");
-			pthread_mutex_lock(&mallocmtx);
-			free(stack);
-			pthread_mutex_unlock(&mallocmtx);
-		} else {
-			// help valgrind
-			VALGRIND_STACK_REGISTER(stack, stack + KTHREAD_STACK_SIZE);
-			// remember the pointer so we can free it later
-			kthread_stacks[i] = stack;
+		if (rv != 0) {
+			perror("pthread_create");
+			exit(EXIT_FAILURE);
 		}
+
+		pthread_detach(kthreads[i]);
 	}
 }
 
@@ -348,20 +316,12 @@ static void __init()
 __attribute__((destructor))
 static void __destroy()
 {
-	int i;
-
-	pthread_mutex_lock(&mallocmtx);
-	for (i = 0; i < NBKTHREADS-1; i++) {
-		free(kthread_stacks[i]);
-	}
-
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
 	if (mainth) {
 		pthread_mutex_unlock(&mainth->mtx);
 		free(mainth);
 	}
-	pthread_mutex_unlock(&mallocmtx);
 }
 
 
@@ -376,14 +336,12 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 		return -1;
 	}
 
-	pthread_mutex_lock(&mallocmtx);
 	stack = malloc(CONTEXT_STACK_SIZE);
 	if (NULL == stack) {
 		perror("malloc");
 		free(*newthread);
 		return -1;
 	}
-	pthread_mutex_unlock(&mallocmtx);
 
 	getcontext(&(*newthread)->uc);
 	(*newthread)->uc.uc_stack.ss_sp = stack;
@@ -395,7 +353,7 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 			(*newthread)->uc.uc_stack.ss_sp
 			+ (*newthread)->uc.uc_stack.ss_size
 		);
-
+	
 	makecontext(
 		&(*newthread)->uc, (void (*)(void))_run, 2, func, funcarg
 	);
@@ -444,7 +402,6 @@ int thread_join(thread_t thread, void **retval)
 
 	*retval = thread->retval;
 
-	pthread_mutex_lock(&mallocmtx);
 	if (thread != mainth) {
 		// libérer ressource
 		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
@@ -457,8 +414,7 @@ int thread_join(thread_t thread, void **retval)
 		free(thread);
 		mainth = NULL;
 	}
-	pthread_mutex_unlock(&mallocmtx);
-
+	
 	return rv;
 }
 
@@ -518,7 +474,7 @@ void thread_exit(void *retval)
 			assert(next != NULL);
 			_magicswap(self, next);
 		}
-
+		
 		else {
 			if (GETTID == maintid) {
 #ifdef SWAPINFO

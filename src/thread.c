@@ -6,7 +6,6 @@
 
 #include <valgrind/valgrind.h>
 
-
 static struct thread mainthread;
 static struct thread *curthread  = &mainthread; // thread courrant
 static struct thread *nextthread = NULL;        // thread suivant schedulé
@@ -19,6 +18,7 @@ struct thread {
   
   int state;
   int type;
+  int canceled;
   
   ucontext_t uc;
   LIST_ENTRY(thread) threads; // liste de threads
@@ -42,6 +42,7 @@ static void __init()
 	
 	mainthread.state = THREAD_CANCEL_ENABLE;
 	mainthread.type = THREAD_CANCEL_DEFERRED;
+	mainthread.canceled = 0;
 	
 	LIST_INIT(&ready);
 }
@@ -98,6 +99,7 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 
 	(*newthread)->state = THREAD_CANCEL_ENABLE;
 	(*newthread)->type = THREAD_CANCEL_DEFERRED;
+	(*newthread)->canceled = 0;
 
 	(*newthread)->uc.uc_link = &mainthread.uc;
 	(*newthread)->uc.uc_stack.ss_size = 64*1024;
@@ -115,7 +117,7 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
   	makecontext(
 		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
 	);
-
+	
 	return 0;
 }
 
@@ -172,36 +174,68 @@ int thread_join(thread_t thread, void **retval)
 	return rv;
 }
 
-
-int thread_cancel(thread_t thread)
-{
-  
-  return 0;
-}
-
 int thread_setcancelstate(int state, int *oldstate)
 {
+  struct thread *self = self_thread();
+  
+  if (self->canceled) {
+    thread_exit(NULL);
+  }
+
   if (oldstate)
     {
-      *oldstate = thread_self()->state;
+      *oldstate = self->state;
     }
 
-  thread_self()->state = state;
+  self->state = state;
 
   return 0;
 }
 
 int thread_setcanceltype(int type, int *oldtype)
 {
+  struct thread *self = self_thread();
+  
   if (oldtype)
     {
-      *oldtype = thread_self()->type;
+      *oldtype = self->type;
     }
 
-  thread_self()->type = type;
+  self->type = type;
 
   return 0;
   
+}
+
+int thread_cancel(thread_t thread)
+{
+  if (THREAD_CANCEL_DISABLE == thread->cancelstate) {
+    thread->canceled = 1;
+    return 0;
+  }
+  
+  if (thread == thread_self()) {
+    thread_exit(NULL);
+  }
+  else {
+    
+    if (self != &mainthread) {
+      // màj thread suivant
+      nextthread = LIST_NEXT(self, threads);
+      LIST_REMOVE(self, threads);
+      
+      // repasser au main
+      _swap_thread(self, &mainthread);
+    }
+    
+    else {
+      do {
+	thread_yield();
+      } while (!LIST_EMPTY(&ready));
+    }
+  }
+  
+  return 0;
 }
 
 void thread_exit(void *retval)

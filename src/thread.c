@@ -30,25 +30,13 @@ static int maintid;
 pthread_t kthreads[NBKTHREADS-1];
 
 
-struct kthread {
-	// this must be set ONLY ONCE and must be the return value of clone
-	pid_t id; 
-	// this points to the 'struct thread' job currently running
-	struct thread *job;
-	// context of the kthread
-	ucontext_t uc;
-} runningjobs[NBKTHREADS];
-
-
 struct thread {
-	// uc = own context
-	ucontext_t uc;
+	ucontext_t uc, *uc_prev;
 
 	char isdone;
 	void *retval;
 
 	struct thread *caller;  // points to the thread that called swapcontext
-	struct kthread *runner; // must point to an entry in 'runningjobs'
 
 	TAILQ_ENTRY(thread) threads;
 
@@ -63,14 +51,15 @@ struct thread {
 	// that thread.
 };
 
-struct thread *mainth;
+static pthread_key_t key_self;
+static struct thread *_mainth;
 
-sem_t nbready;
-unsigned int thcount = 1; // one thread at start time
-pthread_mutex_t thcountmtx = PTHREAD_MUTEX_INITIALIZER;
+static sem_t nbready;
+static unsigned int thcount = 1; // one thread at start time
+static pthread_mutex_t thcountmtx = PTHREAD_MUTEX_INITIALIZER;
 
-TAILQ_HEAD(threadqueue, thread) ready;
-pthread_mutex_t readymtx = PTHREAD_MUTEX_INITIALIZER;
+static TAILQ_HEAD(threadqueue, thread) ready;
+static pthread_mutex_t readymtx = PTHREAD_MUTEX_INITIALIZER;
 
 
 /******************************************/
@@ -90,7 +79,7 @@ struct thread *_thread_new(void)
 	t->isdone = 0;
 	t->caller = NULL;
 	t->retval = NULL;
-	t->runner = NULL;
+	t->uc_prev = NULL;
 	t->uc.uc_link = NULL;
 
 	pthread_mutex_init(&t->mtx, NULL);
@@ -147,10 +136,9 @@ static int _magicswap(struct thread *self, struct thread *th)
 
 		// init next job
 		th->caller = self;
-		th->runner = self->runner;
+		th->uc_prev = self->uc_prev;
 
-		// update kthread entry
-		self->runner->job = th;
+		pthread_setspecific(key_self, th);
 	}
 
 	// POOF 
@@ -196,17 +184,14 @@ static int _magicswap(struct thread *self, struct thread *th)
 
 static void * _clone_func(void *arg)
 {
+	ucontext_t uc;
 	struct thread *t;
-	struct kthread *kself;
 
-	// write our id to our assigned kthread entry
-	kself = (struct kthread *) arg;
-	kself->id = GETTID;
 
 	// main loop
 	while (1) {
 		// release the job that called us if any
-		t = kself->job;
+		t = thread_self();
 		if (t != NULL) {
 #ifdef SWAPINFO
 			fprintf(stderr, "* unlock from _clone_func %p\n", t);
@@ -223,13 +208,13 @@ static void * _clone_func(void *arg)
 		t = _get_job();
 		assert(t != NULL);
 
-		// update kthread entry
-		kself->job = t;
+		// update 'self' thread
+		pthread_setspecific(key_self, t);
 
 		// swap
+		t->uc_prev = &uc;
 		t->caller = NULL;
-		t->runner = kself;
-		swapcontext(&kself->uc, &t->uc);
+		swapcontext(&uc, &t->uc);
 	}
 
 	pthread_exit(NULL);
@@ -281,25 +266,20 @@ static void __init()
 	maintid = GETTID;
 
 	// add this thread to the list
-	if (NULL == (mainth = _thread_new())) {
+	if (NULL == (_mainth = _thread_new())) {
 		exit(EXIT_FAILURE);
 	}
-	mainth->runner = &runningjobs[0];
 
-	// init kthread entries
-	for (i = 0; i < NBKTHREADS; i++) {
-		runningjobs[i].id = 0;
-		runningjobs[i].job = NULL;
-	}
+	getcontext(&_mainth->uc);
+	_mainth->uc_prev = &_mainth->uc;
 
-	runningjobs[0].id = maintid;
-	runningjobs[0].job = mainth;
+	// per-thread data
+	pthread_key_create(&key_self, NULL);
+	pthread_setspecific(key_self, _mainth); // 'self' is now _mainth
 
 	// spawn more kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
-		rv = pthread_create(
-			&kthreads[i], NULL, _clone_func, &runningjobs[i+1]
-		);
+		rv = pthread_create(&kthreads[i], NULL, _clone_func, NULL);
 
 		if (rv != 0) {
 			perror("pthread_create");
@@ -322,9 +302,9 @@ static void __destroy()
 
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
-	if (mainth) {
-		pthread_mutex_unlock(&mainth->mtx);
-		free(mainth);
+	if (_mainth) {
+		pthread_mutex_unlock(&_mainth->mtx);
+		free(_mainth);
 	}
 }
 
@@ -406,7 +386,7 @@ int thread_join(thread_t thread, void **retval)
 
 	*retval = thread->retval;
 
-	if (thread != mainth) {
+	if (thread != _mainth) {
 		// libérer ressource
 		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
 		free(thread->uc.uc_stack.ss_sp);
@@ -416,7 +396,7 @@ int thread_join(thread_t thread, void **retval)
 		// special case for the main thread (see __destroy)
 		pthread_mutex_unlock(&thread->mtx);
 		free(thread);
-		mainth = NULL;
+		_mainth = NULL;
 	}
 	
 	return rv;
@@ -425,15 +405,7 @@ int thread_join(thread_t thread, void **retval)
 
 thread_t thread_self(void)
 {
-	int i;
-	pid_t tid = GETTID;
-	for (i = 0; i < NBKTHREADS; i++) {
-		if (runningjobs[i].id == tid) {
-			return runningjobs[i].job;
-		}
-	}
-
-	assert(0);
+	return pthread_getspecific(key_self);
 }
 
 
@@ -457,14 +429,14 @@ void thread_exit(void *retval)
 		// last thread just died, clean up
 		pthread_mutex_unlock(&self->mtx);
 
-		if (self != mainth) {
+		if (self != _mainth) {
 			VALGRIND_STACK_DEREGISTER(self->valgrind_stackid);
 			//free(self->uc.uc_stack.ss_sp);
 			free(self);
 		} else {
-			// special case for mainth
+			// special case for _mainth
 			free(self);
-			mainth = NULL;
+			_mainth = NULL;
 		}
 
 		exit(EXIT_SUCCESS);
@@ -484,12 +456,12 @@ void thread_exit(void *retval)
 #ifdef SWAPINFO
 				fprintf(stderr, "MAIN fall back to the infinite loop\n");
 #endif
-				_clone_func(&runningjobs[0]);
+				_clone_func(NULL);
 			} else {
 #ifdef SWAPINFO
 				fprintf(stderr, "CLONE fall back to the infinite loop\n");
 #endif
-				swapcontext(&self->uc, &self->runner->uc);
+				swapcontext(&self->uc, self->uc_prev);
 			}
 		}
 	}

@@ -1,26 +1,6 @@
 \subsection{Support des machines multiprocesseur}
 
-L'implémentation des threads noyaux est en cours et se sert de l'appel système
-\verb!clone! pour créer de nouveau threads dans le même thread group que le
-processus parent. Dans cette implémentation, les différents threads se
-partagent les listes de threads utilisateurs en attente (ready) et en cours
-d'éxécution (running).
-
-Au démarrage, un certain nombre (décidé à la compilation) de threads noyaux
-sont créés et exécutent une boucle infinie allant chercher un contexte à
-exécuter dans une fifo "ready". Chaque contexte est responsable du lancement du
-contexte suivant (lors d'un \verb!yield! ou d'un \verb!exit! par exemple). Si
-aucun contexte n'est placé dans la file "ready", il y a retour à la boucle
-infinie attendant l'ajout d'un nouveau contexte à exécuter.
-
-Les problèmes d'accès concurrents sont pour l'instant gérés avec des sémaphores
-et des mutex fournis par la bibliothèque pthread. S'il nous reste du temps,
-l'utilisation de futex est prévue afin de les remplacer.
-
-La destruction des threads noyaux est prise en charge par le destructeur
-(fonction \verb!__destroy()!) qui envoie une série de signaux SIGTERM aux
-threads issus de l'appel à \verb!clone! avant de libérer les ressources qu'ils
-occupaient.
+\input{kthreads}
 
 
 \subsection{Préemption} 

@@ -1,13 +1,7 @@
 #ifndef __THREAD_H__
 #define __THREAD_H__
 
-#include "queue.h"
 #include <stdio.h>
-
-#define THREAD_CANCEL_ENABLE       1
-#define THREAD_CANCEL_DISABLE      2
-#define THREAD_CANCEL_DEFERRED     3
-#define THREAD_CANCEL_ASYNCHRONOUS 4
 
 
 /* identifiant de thread */
@@ -42,6 +36,5 @@ int thread_join(thread_t thread, void **retval);
  * n'est pas correctement implémenté (il ne doit jamais retourner).
  */
 void thread_exit(void *retval) __attribute__ ((__noreturn__));
-
 
 #endif /* __THREAD_H__ */

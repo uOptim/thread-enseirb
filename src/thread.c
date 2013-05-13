@@ -187,7 +187,6 @@ static void * _clone_func(void *arg)
 	ucontext_t uc;
 	struct thread *t;
 
-
 	// main loop
 	while (1) {
 		// release the job that called us if any
@@ -220,6 +219,11 @@ static void * _clone_func(void *arg)
 	pthread_exit(NULL);
 }
 
+static void _preemption(int sig)
+{
+	fprintf(stderr, "Preemption\n");
+	//thread_yield();
+}
 
 static void _run(void *(*func)(void*), void *funcarg)
 {
@@ -276,6 +280,13 @@ static void __init()
 	// per-thread data
 	pthread_key_create(&key_self, NULL);
 	pthread_setspecific(key_self, _mainth); // 'self' is now _mainth
+	
+	// alarm for preemption
+	struct sigaction sa;
+	sigfillset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+	sa.sa_handler = _preemption;
+	sigaction(SIGALRM, &sa, NULL);
 
 	// spawn more kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
@@ -288,6 +299,9 @@ static void __init()
 
 		pthread_detach(kthreads[i]);
 	}
+
+	// alarm for preemption
+	ualarm(20000, 20000);
 }
 
 

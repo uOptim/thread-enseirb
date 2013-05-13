@@ -176,17 +176,17 @@ int thread_join(thread_t thread, void **retval)
 
 int thread_setcancelstate(int state, int *oldstate)
 {
-  struct thread *self = self_thread();
+  struct thread *self = thread_self();
   
-  if (self->canceled) {
+  if (self->canceled && THREAD_CANCEL_ENABLE == state) {
     thread_exit(NULL);
   }
-
+  
   if (oldstate)
     {
       *oldstate = self->state;
     }
-
+  
   self->state = state;
 
   return 0;
@@ -194,7 +194,7 @@ int thread_setcancelstate(int state, int *oldstate)
 
 int thread_setcanceltype(int type, int *oldtype)
 {
-  struct thread *self = self_thread();
+  struct thread *self = thread_self();
   
   if (oldtype)
     {
@@ -209,7 +209,7 @@ int thread_setcanceltype(int type, int *oldtype)
 
 int thread_cancel(thread_t thread)
 {
-  if (THREAD_CANCEL_DISABLE == thread->cancelstate) {
+  if (THREAD_CANCEL_DISABLE == thread->state) {
     thread->canceled = 1;
     return 0;
   }
@@ -219,13 +219,16 @@ int thread_cancel(thread_t thread)
   }
   else {
     
-    if (self != &mainthread) {
+    thread->isdone = 1;
+    thread->retval = NULL;
+    
+    if (thread != &mainthread) {
       // màj thread suivant
-      nextthread = LIST_NEXT(self, threads);
-      LIST_REMOVE(self, threads);
+      nextthread = LIST_NEXT(thread, threads);
+      LIST_REMOVE(thread, threads);
       
       // repasser au main
-      _swap_thread(self, &mainthread);
+      _swap_thread(thread, &mainthread);
     }
     
     else {

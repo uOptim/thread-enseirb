@@ -10,7 +10,9 @@
 
 #include <valgrind/valgrind.h>
 
+#define TIMESLICE 200000
 
+struct timeval start, end;
 static char init = 0;
 static struct sigaction alarm_scheduler;
 
@@ -24,6 +26,7 @@ struct thread {
 	char isdone;
 	void *retval;
 
+  int priority;
 	ucontext_t uc;
 	LIST_ENTRY(thread) threads; // liste de threads
 
@@ -45,6 +48,7 @@ static void __init()
 	mainthread.id = 0;
 	mainthread.isdone = 0;
 	mainthread.retval = NULL;
+
 	getcontext(&mainthread.uc);
 
 	LIST_INIT(&ready);
@@ -60,7 +64,11 @@ static void __init()
 	  exit(2);
 	}
 	
-	ualarm(200000, 200000);
+	//ualarm(200000, 200000);
+	printf("main : %p\n", &mainthread);
+	ualarm(TIMESLICE, 0);
+	gettimeofday(&start, NULL);
+
 }
 
 
@@ -78,10 +86,13 @@ int _thread_yield(void)
 	}
 	else
 	  nextthread = LIST_NEXT(self, threads);
-
 	// swapcontext si thread schedulé
 	if (nextthread != NULL) {
+	  fprintf(stderr, "prio : %d\n", self->priority);
 	  rv = _swap_thread(self, nextthread);
+	 
+	
+	  //  gettimeofday(&start, NULL);
 
 	}
 
@@ -89,9 +100,10 @@ int _thread_yield(void)
 }
 
 static void _swap_scheduler (int signal) {
-  printf("coucouc \n");
+  gettimeofday(&end, NULL);
+  fprintf(stderr,"thread %p, prio %d : %ld\n", curthread, curthread->priority,((end.tv_sec * 1000000 + end.tv_usec)-(start.tv_sec * 1000000 + start.tv_usec)));	
+
   _thread_yield();
-  
 }
 
 
@@ -99,11 +111,14 @@ static void _swap_scheduler (int signal) {
 // mis à jour.
 static int _swap_thread(struct thread *th1, struct thread *th2)
 {
+        
 
 	int rv = 0;
 	curthread = th2;
-	
+	ualarm(th2->priority * TIMESLICE, 0);
+	gettimeofday(&start, NULL);
 	rv = swapcontext(&th1->uc, &th2->uc);
+	
 
 	if (rv) {
 		perror("swapcontext");
@@ -131,7 +146,9 @@ thread_t thread_self(void)
 }
 
 
-static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *funcarg) {
+
+
+static int _initialize_thread_priority(thread_t *newthread, void *(*func)(void *), void *funcarg, int prio) {
 	static unsigned int id = 1;
 
 	if (!init) __init();
@@ -147,6 +164,7 @@ static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *
 	(*newthread)->id = id++;
 	(*newthread)->isdone = 0;
 	(*newthread)->retval = NULL;
+	(*newthread)->priority = prio;
 	(*newthread)->uc.uc_link = &mainthread.uc;
 	(*newthread)->uc.uc_stack.ss_size = 64*1024;
 
@@ -166,18 +184,26 @@ static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *
 	return 0;
 }
 
+static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *funcarg) {
+ return _initialize_thread_priority(newthread, func, funcarg, 1);
+}
+
+
 static void _insert_thread(thread_t newthread){
 	LIST_INSERT_HEAD(&ready, newthread, threads);
 }
 
 
-int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
+int thread_create_priority(thread_t *newthread, void *(*func)(void *), void *funcarg, int prio)
 {
-	_initialize_thread(newthread, func, funcarg);
-	_insert_thread(*newthread);
-	return 0;
+  _initialize_thread_priority(newthread, func, funcarg, prio);
+  _insert_thread(*newthread);
+  return 0;
 }
 
+int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg){
+  return thread_create_priority(newthread, func, funcarg, 1);
+}
 
 int thread_yield(void)
 {
@@ -212,6 +238,7 @@ int thread_yield(void)
 
 	return rv;
 }
+
 
 
 int thread_join(thread_t thread, void **retval)

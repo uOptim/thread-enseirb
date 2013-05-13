@@ -19,6 +19,11 @@ thread_t thread_self(void);
  */
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg);
 
+/*
+ * idem thread_create en definissant une priorité
+ */
+int thread_create_priority(thread_t *newthread, void *(*func)(void *), void *funcarg, int prio);
+
 /* passer la main à un autre thread.
  */
 int thread_yield(void);

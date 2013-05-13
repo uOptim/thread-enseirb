@@ -17,7 +17,7 @@
 #include "thread.h"
 
 #ifndef NBKTHREADS
-#define NBKTHREADS 2 // INCLUDING the main thread!
+#define NBKTHREADS 1 // INCLUDING the main thread!
 #endif
 
 #define CONTEXT_STACK_SIZE 32*1024 /* 32 KB stack size for contexts */
@@ -50,6 +50,9 @@ struct thread {
 	// the swapcontext is done from another thread's context, make it point to
 	// that thread.
 };
+
+// set of signals to block
+sigset_t blockall, sigsave;
 
 static pthread_key_t key_self;
 static struct thread *_mainth;
@@ -175,6 +178,10 @@ static int _magicswap(struct thread *self, struct thread *th)
 			} else {
 				pthread_mutex_unlock(&caller->mtx);
 			}
+
+			// restore signal mask
+			fprintf(stderr, "Signals restored %d\n", __LINE__);
+			pthread_sigmask(SIG_SETMASK, &sigsave, NULL);
 		}
 	}
 
@@ -189,6 +196,7 @@ static void * _clone_func(void *arg)
 
 	// main loop
 	while (1) {
+
 		// release the job that called us if any
 		t = thread_self();
 		if (t != NULL) {
@@ -200,6 +208,10 @@ static void * _clone_func(void *arg)
 			} else {
 				pthread_mutex_unlock(&t->mtx);
 			}
+
+			// restore signal mask
+			fprintf(stderr, "Signals restored %d\n", __LINE__);
+			pthread_sigmask(SIG_SETMASK, &sigsave, NULL);
 		}
 
 		// get a new job
@@ -222,7 +234,9 @@ static void * _clone_func(void *arg)
 static void _preemption(int sig)
 {
 	fprintf(stderr, "Preemption\n");
-	//thread_yield();
+	if (thread_self()) {
+		thread_yield();
+	}
 }
 
 static void _run(void *(*func)(void*), void *funcarg)
@@ -247,6 +261,10 @@ static void _run(void *(*func)(void*), void *funcarg)
 		} else {
 			pthread_mutex_unlock(&caller->mtx);
 		}
+
+		// restore signal mask
+		fprintf(stderr, "Signals restored %d\n", __LINE__);
+		pthread_sigmask(SIG_SETMASK, &sigsave, NULL);
 	}
 
 	void *retval;
@@ -287,6 +305,14 @@ static void __init()
 	sa.sa_flags = SA_RESTART;
 	sa.sa_handler = _preemption;
 	sigaction(SIGALRM, &sa, NULL);
+
+	// init signal mask
+	sigfillset(&blockall);
+
+	// save original mask
+	sigset_t tmp;
+	sigemptyset(&tmp);
+	pthread_sigmask(SIG_BLOCK, &tmp, &sigsave);
 
 	// spawn more kernel threads
 	for (i = 0; i < NBKTHREADS-1; i++) {
@@ -330,6 +356,10 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 {
 	void *stack;
 
+	// block all signals
+	fprintf(stderr, "Signals blocked %d\n", __LINE__);
+	pthread_sigmask(SIG_SETMASK, &blockall, &sigsave);
+
 	if (NULL == (*newthread = _thread_new())){
 		return -1;
 	}
@@ -362,6 +392,10 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 
 	_add_job(*newthread);
 
+	// restore signal mask
+	fprintf(stderr, "Signals restored %d\n", __LINE__);
+	pthread_sigmask(SIG_SETMASK, &sigsave, NULL);
+
 	return 0;
 }
 
@@ -369,6 +403,10 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 int thread_yield(void)
 {
 	struct thread *next;
+
+	// block all signals
+	fprintf(stderr, "Signals blocked %d\n", __LINE__);
+	pthread_sigmask(SIG_SETMASK, &blockall, &sigsave);
 
 	thread_t self = thread_self();
 	assert(self != NULL);
@@ -381,6 +419,9 @@ int thread_yield(void)
 #ifdef SWAPINFO
 		fprintf(stderr, "* yield: no other thread ready\n");
 #endif
+		// restore signal mask
+		fprintf(stderr, "Signals restored %d\n", __LINE__);
+		pthread_sigmask(SIG_SETMASK, &sigsave, NULL);
 	}
 
 	return 0;
@@ -390,6 +431,10 @@ int thread_yield(void)
 int thread_join(thread_t thread, void **retval)
 {
 	int rv = 0;
+
+	// block all signals
+	fprintf(stderr, "Signals blocked %d\n", __LINE__);
+	pthread_sigmask(SIG_SETMASK, &blockall, &sigsave);
 
 	pthread_mutex_lock(&thread->mtx);
 	while (!thread->isdone) {
@@ -412,6 +457,10 @@ int thread_join(thread_t thread, void **retval)
 		free(thread);
 		_mainth = NULL;
 	}
+
+	// restore signal mask
+	fprintf(stderr, "Signals restored %d\n", __LINE__);
+	pthread_sigmask(SIG_SETMASK, &sigsave, NULL);
 	
 	return rv;
 }
@@ -427,6 +476,10 @@ void thread_exit(void *retval)
 {
 	int cond;
 	struct thread *next;
+
+	// block all signals
+	fprintf(stderr, "Signals blocked %d\n", __LINE__);
+	pthread_sigmask(SIG_SETMASK, &blockall, &sigsave);
 
 	thread_t self = thread_self();
 	assert(self != NULL);

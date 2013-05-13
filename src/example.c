@@ -7,6 +7,10 @@ static void * threadfunc(void * arg)
   char *name = arg;
   fprintf(stderr, "je suis le thread %p, lancé avec l'argument %s\n",
 	 thread_self(), name);
+
+  unsigned int i = 1;
+  while(i++);
+
   thread_yield();
   fprintf(stderr, "je suis encore le thread %p, lancé avec l'argument %s\n",
 	 thread_self(), name);
@@ -26,6 +30,9 @@ int main(int argc, char *argv[])
   assert(!err);
   fprintf(stderr, "le main a lancé les threads %p et %p\n",
 	 thread1, thread2);
+
+  unsigned int i = 1;
+  while(i++);
 
   fprintf(stderr, "le main attend les threads\n");
   err = thread_join(thread2, &retval2);

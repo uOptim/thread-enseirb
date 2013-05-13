@@ -1,7 +1,4 @@
-La première étape a été de récupérer le squelette du code de la bibliothèque de
-thread et de coder les fonctions nécessaires à son fonctionnement. Cette partie
-explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la
-façon dont nous les avons résolus.
+La première étape a été de récupérer le squelette du code de la bibliothèque de thread et de coder les fonctions nécessaires à son fonctionnement. Cette partie explique les choix qui ont été faits, ainsi que les problèmes rencontrés et la façon dont nous les avons résolus.
 
 \subsection{Choix de programmations}
 
@@ -19,12 +16,8 @@ oppérations peuvent être réalisées pendant leur parcours
 (\verb!*_FOREACH_SAFE!).
 
 
-\subsection{Le cas du thread principal}
+\subsection{Version de base sans objectif avancé}
 
-La gestion du thread principal nécessite des opérations différentes des autres
-threads notamment lors de la libération de ressource ou de l'ordonnancement. En
-effet, les tests qui nous sont fournis demandent à ce que le thread principal
-fasse des \verb!yield! vers des fils et un fils doit faire des \verb!yield!
-vers le thread principal (cf. \verb!02-switch.c!). De plus, le thread principal
-doit pouvoir être utilisé dans la fonction \verb!thread_join()! tout en
-permettant aux autres threads de continuer à utiliser \verb!yield!.
+\paragraph{} La version de base garde une liste de threads utilisateur à exécuter. Ceux-ci sont représentés par des contextes qui sont exécutés l'un après l'autre lors d'un appel à \verb!thread_yield()!. Un pointeur vers le thread courrant et un autre vers son succésseur sont mis à jour à chaque changement de contexte pour fournir un ordonnancement rudimentaire qui donne son tour à chaque thread.
+
+\paragraph{} Le cas des threads ne faisant pas appel à \verb!thread_exit()! a été traîté à l'aide d'une fonction auxiliaire qui l'invoque explicitement après appel à la fonction donnée par l'utilisateur (voir fonction \verb!_run()!). Lorsqu'un thread a terminé (après un appel à \verb!thread_exit()!), il est retiré de la liste de threads à exécuter, sa valeur de retour est sauvegardée et il est marqué comme étant terminé. Ses ressources ne sont libérées que lorsqu'il est la cible d'un \verb!thread_join()!.

@@ -1,12 +1,15 @@
+Dans cette partie, afin d'alléger les phrases, une tâche est synonyme de thread utilisateur (que l'on doit distinguer des threads noyaux).
+
 \subsubsection{Aperçu du fonctionnement}
 
-Afin d'utiliser tous les processeurs disponibles, un certain nombre (fixé à la compilation) de threads noyaux sont créés lors de l'initialisation de la bibliothèque. Ce nombre inclut le thread 'racine' qui n'est pas distinguable des threads créés du point de vue de l'utilisateur. Les threads alors créés entrent dans une boucle infinie dans laquelle ils vont consommer des travaux à réaliser placés dans une file.
+Afin d'utiliser tous les processeurs disponibles, un certain nombre (fixé à la compilation) de threads noyaux sont créés lors de l'initialisation de la bibliothèque. Ce nombre inclut le thread principal qui n'est pas distinguable des threads créés du point de vue de l'utilisateur. Les threads alors créés entrent dans une boucle infinie dans laquelle ils vont consommer des tâches à réaliser placés dans une file.
 
-Ces travaux sont les threads manipulés par l'utilisateur crées via la fonction \verb!thread_create()! de la bibliothèque. Ils sont définis par un contexte et quelques attributs sur leur état.
+Ces tâches sont celles crées par l'utilisateur via la fonction \verb!thread_create()! de la bibliothèque. Ils sont définis par un contexte et quelques attributs sur leur état.
 
 
-\subsubsection{Threads noyaux avec clone()}
+\subsubsection{Threads noyaux}
 
+\paragraph{Avec clone()}
 Nous avons tout d'abord utilisé l'appel système \verb!clone()! avec notamment les flags \verb!CLONE_VM! (partage de la mémoire), \verb!CLONE_THREADS! (processus créés dans un même groupe de threads), etc. Cette solution a bien abouti mais nous a permise de nous rendre compte de plusieurs problèmes.
 
 Le premier est le stockage de données propres au thread qui sont utiles pour les distinguer et rendre l'appel à \verb!thread_self()! efficace. L'idée était alors de conserver un pointeur global vers le thread utilisateur courant qui lui permettrait, lorsqu'il est exécuté sur un thread noyau, d'avoir un accès immédiat vers la structure qui le représente. Une solution (non portable) proposée par gcc est de déclarer des variables avec l'attribut \verb!__thread! mais nous ne sommes pas parvenu à obtenir le comportement souhaité car la valeur du pointeur semblait partagée entre tous les processus malgré tout. Nous avons donc changé d'approche et avons résolu notre problème en créant un tableau associant un l'identifiant d'un thread noyau (obtenu via \verb!gettid()!) à un thread utilisateur. Cette solution nécessite donc le parcours d'un tableau de taille égale au nombre de threads noyaux à chaque fois que l'on souhaite identifier quel thread utilisateur est exécuté.
@@ -31,6 +34,25 @@ et cela pour toutes les fonctions de la bibliothèque standard pouvant souffrir
 d'appels concurrents!
 
 
-\subsubsection{Threads noyaux avec pthread\_create()}
-
+\paragraph{Avec pthread\_create()}
 Afin de supprimer la limitation précédente, nous avons remplacé l'appel à \verb!clone()! par un appel à \verb!pthread_create()!. Les mutex avant l'allocation et la libération de mémoire ont alors pu être supprimées sans faire réaparaitre de corruption et nous avons pu utiliser des \verb!pthread_key! pour stocker un pointeur vers le thread courant et s'affranchir du parcours de tableau précédent.
+
+
+\subsubsection{Ordonnancement}
+
+\paragraph{File de tâches} Les threads utilisateur sont stockés dans une file. Un mutex et un sémaphore y sont associés pour la concurrence et le signalement de nouvelles tâches enfilées respectivement.
+
+\paragraph{Contexte d'un thread noyau} À l'initialisation, on distingue deux cas pour les threads noyaux. Le thread principal (qui est exécuté depuis le début du programme) n'est pas altéré: il continue l'exécution normale du programme dans un premier temps tandis que les threads créés attendent les premières tâches à exécuter dans une boucle infinie qui va consommer des tâches placées dans la file (fonction \verb!_clone_func()!).
+
+\paragraph{Exécution des threads utilisateur} Pour chaque thread noyau, le thread utilisateur exécuté est responsable de l'exécution du thread utilisateur suivant. 
+
+Suivant la quantité de threads noyaux et de tâches, trois cas peuvent se présenter :
+\begin{itemize}
+\item Si la file de tâches est vide et que le thread utilisateur courant est terminé, alors on repasse dans le contexte thread noyau pour attendre de nouvelles tâches. Dans le cas où ce thread noyau est le thread principal, on lance la fonction d'attente sur la file \verb!_clone_func()!. Ce cas particulier du thread principal n'est exécuté qu'une seule fois et, après cela, il n'est plus faite de distinction concernant l'ordonnancement avec les autres threads noyaux.
+\item Sinon si la file est vide mais que le thread courant n'est pas fini, alors ne rien faire et continuer l'exécution.
+\item Sinon, la file n'est pas vide donc appeler une fonction de changement de contexte \verb!_magicswap()! détaillée plus loin.
+\end{itemize}
+
+\paragraph{Changements de contextes avec \_magicswap} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le un thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
+
+Avec ce schéma et s'il l'on souhaite ne pas repasser au contexte du thread noyau pour réaliser la libération de l'ancienne tâche et le verrouillage d'une nouvelle, il faut pouvoir indiquer à une tâche sa tâche appelante afin de réaliser la libération.

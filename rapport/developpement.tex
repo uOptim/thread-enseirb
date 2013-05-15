@@ -2,17 +2,17 @@ La première étape a été de récupérer le squelette du code de la bibliothè
 
 \subsection{Choix de programmations}
 
-L'initialisation de la bibliothèque est implicite et ne nécessite pas d'être
-faite manuellement par le code client. En effet, des fonctions \verb!__init()!
-(resp. \verb!__destroy()!) avec l'attribut \verb!__attribute__((constructor))!
-(resp. \verb!__attribute__((destructor))!) fourni par gcc permettent de
-réaliser les initialisations (resp. le nettoyage) nécessaires au bon
-fonctionnement.
+\paragraph{} L'initialisation de la bibliothèque est implicite et ne nécessite
+pas d'être faite manuellement par le code client. En effet, des fonctions
+\verb!__init()!  (resp. \verb!__destroy()!) avec l'attribut
+\verb!__attribute__((constructor))!  (resp.
+\verb!__attribute__((destructor))!) fourni par gcc permettent de réaliser les
+initialisations (resp. le nettoyage) nécessaires au bon fonctionnement.
 
-Les listes de \verb!sys/queue.h! empruntées à BSD ont été retenues pour leur
-simplicité d'utilisation et leur "légèreté". Les files et listes doublement
-chaînées permettent des ajouts et suppressions en temps constant et ces
-oppérations peuvent être réalisées pendant leur parcours
+\paragraph{} Les listes de \verb!sys/queue.h! empruntées à BSD ont été
+retenues pour leur simplicité d'utilisation et leur "légèreté". Les files et
+listes doublement chaînées permettent des ajouts et suppressions en temps
+constant et ces oppérations peuvent être réalisées pendant leur parcours
 (\verb!*_FOREACH_SAFE!).
 
 

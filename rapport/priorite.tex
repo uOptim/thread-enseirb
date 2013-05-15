@@ -1,0 +1,5 @@
+Après l'implémention de la préemption, nous avons pu développer une gestion de la priorité. Deux possibilités s'offraient à nous : Round-robin et l'utilisation de plusieurs listes de priorités. 
+
+TODO   schémas
+
+Les deux solutions nous semblaient également efficaces (pas de famines). Nous avons cependant choisi d'implémenter Round-robin pour sa simplicité. Nous avons ajouté un champ entier $priority$ dans la structure $thread$. Plus cette priorité est élévée, plus le thread est prioritaire. Ainsi, lorsqu'un thread de $ready$ est exécuté, son temps d'exécution est proportionnel à sa priorité. Les processus de priorité s'exécutent donc plus longtemps, assurant une gestion des priorités efficace.

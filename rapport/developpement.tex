@@ -21,3 +21,13 @@ oppérations peuvent être réalisées pendant leur parcours
 \paragraph{} La version de base garde une liste de threads utilisateur à exécuter. Ceux-ci sont représentés par des contextes qui sont exécutés l'un après l'autre lors d'un appel à \verb!thread_yield()!. Un pointeur vers le thread courrant et un autre vers son succésseur sont mis à jour à chaque changement de contexte pour fournir un ordonnancement rudimentaire qui donne son tour à chaque thread.
 
 \paragraph{} Le cas des threads ne faisant pas appel à \verb!thread_exit()! a été traîté à l'aide d'une fonction auxiliaire qui l'invoque explicitement après appel à la fonction donnée par l'utilisateur (voir fonction \verb!_run()!). Lorsqu'un thread a terminé (après un appel à \verb!thread_exit()!), il est retiré de la liste de threads à exécuter, sa valeur de retour est sauvegardée et il est marqué comme étant terminé. Ses ressources ne sont libérées que lorsqu'il est la cible d'un \verb!thread_join()!.
+
+
+\subsection{Définition d'une structure}
+Comment, quels champs 
+
+\subsection{Fonctionnement général du programme}
+\subsubsection{Variables globales}
+\subsubsection{Thread yield}
+\subsubsection{Thread create}
+\subsubsection{etc ...}

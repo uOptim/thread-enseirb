@@ -18,13 +18,17 @@
 
 #define TYPE int
 
+// Define LRANGE <= i < HRANGE
+#define LRANGE 0
+#define HRANGE 100
+
 TYPE *T;
 
 static void print(TYPE length) {
   if(length > 100)
     return;
 
-  int i;
+  TYPE i;
   
   fprintf(stdout, "T = [%d", T[0]);
   for (i = 1; i < length; i++) {
@@ -96,12 +100,12 @@ int main(int argc, char *argv[])
   }
   
   length = atoi(argv[1]);
-  T = malloc(length*sizeof(int));
+  T = malloc(length*sizeof(TYPE));
   
   srand(time(NULL));
   
   for (i = 0; i < length; i++) {
-    T[i] = rand() % 100;
+    T[i] = LRANGE + rand()%(HRANGE - LRANGE);
   }
   
   print(length);

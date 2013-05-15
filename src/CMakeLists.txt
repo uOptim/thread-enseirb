@@ -1,4 +1,5 @@
 add_library (thread thread.c)
+target_link_libraries (thread pthread)
 
 add_executable (contextes contextes.c)
 

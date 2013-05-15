@@ -1,0 +1,32 @@
+\subsubsection{Aperçu du fonctionnement}
+
+Afin d'utiliser tous les processeurs disponibles, un certain nombre (fixé à la compilation) de threads noyaux sont créés lors de l'initialisation de la bibliothèque. Ce nombre inclut le thread 'racine' qui n'est pas distinguable des threads créés du point de vue de l'utilisateur. Les threads alors créés entrent dans une boucle infinie dans laquelle ils vont consommer des travaux à réaliser placés dans une file.
+
+Ces travaux sont les threads manipulés par l'utilisateur crées via la fonction \verb!thread_create()! de la bibliothèque. Ils sont définis par un contexte et quelques attributs sur leur état.
+
+
+\subsubsection{Threads noyaux avec clone()}
+
+Nous avons tout d'abord utilisé l'appel système \verb!clone()! avec notamment les flags \verb!CLONE_VM! (partage de la mémoire), \verb!CLONE_THREADS! (processus créés dans un même groupe de threads), etc. Cette solution a bien abouti mais nous a permise de nous rendre compte de plusieurs problèmes.
+
+Le premier est le stockage de données propres au thread qui sont utiles pour les distinguer et rendre l'appel à \verb!thread_self()! efficace. L'idée était alors de conserver un pointeur global vers le thread utilisateur courant qui lui permettrait, lorsqu'il est exécuté sur un thread noyau, d'avoir un accès immédiat vers la structure qui le représente. Une solution (non portable) proposée par gcc est de déclarer des variables avec l'attribut \verb!__thread! mais nous ne sommes pas parvenu à obtenir le comportement souhaité car la valeur du pointeur semblait partagée entre tous les processus malgré tout. Nous avons donc changé d'approche et avons résolu notre problème en créant un tableau associant un l'identifiant d'un thread noyau (obtenu via \verb!gettid()!) à un thread utilisateur. Cette solution nécessite donc le parcours d'un tableau de taille égale au nombre de threads noyaux à chaque fois que l'on souhaite identifier quel thread utilisateur est exécuté.
+
+Le second problème provient de glibc. En effet, lorsque l'on dit que glibc est
+'thread-safe', il faut en fait comprendre 'pthread-safe'. Nous nous en sommes
+rendu compte lors d'appels intensifs vers \verb!malloc! pour la création de
+threads utilisateur dans les tests comme fibonacci : nous obtenions des
+corruption du tas laissant penser que malloc n'était pas thread-safe!
+L'explication est simple : l'ensemble de glibc dépend énormément du
+fonctionnement de pthread pour les applications multi-threadées et fait des
+ajustements pour avoir un comportement correct dans ce type de programme. En
+voulant se passer de pthread au profit d'une implémentation plus bas niveau
+grâce à \verb!clone()!, nous contournons ces ajustements et l'utilisation de
+la bibliothèque standard n'est alors plus sûre. La corruption du tas fût
+corrigée avec un simple mutex placé avant chaque \verb!malloc()! ou
+\verb!free()!, confirmant notre observation. Ceci est lourd de conséquence car
+la même précaution doit alors être prise par l'utilisateur et cela pour toutes les fonctions de la bibliothèque standard pouvant souffrir d'appels concurrents!
+
+
+\subsubsection{Threads noyaux avec pthread\_create()}
+
+Afin de supprimer la limitation précédente, nous avons remplacé l'appel à \verb!clone()! par un appel à \verb!pthread_create()!. Les mutex avant l'allocation et la libération de mémoire ont alors pu être supprimées sans faire réaparaitre de corruption et nous avons pu utiliser des \verb!pthread_key! pour stocker un pointeur vers le thread courant et s'affranchir du parcours de tableau précédent.

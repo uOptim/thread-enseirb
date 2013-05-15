@@ -3,8 +3,6 @@
 
 #include <stdio.h>
 
-#include "queue.h"
-
 
 /* identifiant de thread */
 typedef struct thread * thread_t;

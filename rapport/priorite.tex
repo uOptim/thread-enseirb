@@ -4,6 +4,19 @@ Round-robin consiste à voir la liste de thread $ready$ comme une liste circulai
 
 L'autre algorithme consiste à créer une liste $ready$ pour chaque valeur de priorité. Les processus sont ajoutés à la liste correspondant à leur priorité lors de leur création. Les processus de priorités élevées sont exécutés plus souvent et plus longtemps que les autres. Pour cela, on exécute successivement un nombre défini de processus d'une liste $ready$, puis d'une autre.
 
-TODO   schémas
+\begin{figure}[!h]
+\centering
+\includegraphics[width=0.9\textwidth]{round_robin.png}
+\caption{Système de priorité basé sur Round-Robin}  
+\label{sequence} 
+\end{figure} 
+
+\begin{figure}[!h]
+\centering
+\includegraphics[width=0.9\textwidth]{queus_multi.png}
+\caption{Système de priorité basé sur plusieurs listes}  
+\label{sequence} 
+\end{figure} 
+
 
 Les deux solutions nous semblaient également efficaces (pas de famines). Nous avons cependant choisi d'implémenter Round-robin pour sa simplicité. Nous avons ajouté un champ entier $priority$ dans la structure $thread$. Plus cette priorité est élévée, plus le thread est prioritaire. Ainsi, lorsqu'un thread de $ready$ est exécuté, son temps d'exécution est proportionnel à sa priorité. Les processus de priorité s'exécutent donc plus longtemps, assurant une gestion des priorités efficace.

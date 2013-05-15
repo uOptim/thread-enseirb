@@ -10,9 +10,11 @@
 
 #include <valgrind/valgrind.h>
 
-#define TIMESLICE 200000
+#define TIMESLICE 100000
 
+/* Affichage du temps pour la préemption avec priorité*/
 struct timeval start, end;
+
 static char init = 0;
 static struct sigaction alarm_scheduler;
 
@@ -26,7 +28,7 @@ struct thread {
 	char isdone;
 	void *retval;
 
-  int priority;
+  int priority; 
 	ucontext_t uc;
 	LIST_ENTRY(thread) threads; // liste de threads
 
@@ -39,7 +41,7 @@ LIST_HEAD(tqueue, thread) ready, done;
 
 			  static int _swap_thread(struct thread *th1, struct thread *th2);
 			  static void _swap_scheduler(int sig);
-			  static int _initialize_thread(thread_t *newthread, void* (*func)(void*), void *funcarg);
+
 
 
 
@@ -64,8 +66,8 @@ static void __init()
 	  exit(2);
 	}
 	
-	//ualarm(200000, 200000);
-	printf("main : %p\n", &mainthread);
+	/* Execution du main pendant TIMESLICE */
+	printf("Main -- priorité 1 par défaut \n");
 	ualarm(TIMESLICE, 0);
 	gettimeofday(&start, NULL);
 
@@ -88,12 +90,13 @@ int _thread_yield(void)
 	  nextthread = LIST_NEXT(self, threads);
 	// swapcontext si thread schedulé
 	if (nextthread != NULL) {
-	  fprintf(stderr, "prio : %d\n", self->priority);
-	  rv = _swap_thread(self, nextthread);
-	 
-	
-	  //  gettimeofday(&start, NULL);
 
+	  fprintf(stdout, "prio : %d (temps théorique d'execution : %d) - ", nextthread->priority, (nextthread->priority * TIMESLICE));
+	  ualarm(nextthread->priority * TIMESLICE, 0);
+	  gettimeofday(&start, NULL);
+	  
+	  rv = _swap_thread(self, nextthread); 
+	
 	}
 
 	return rv;
@@ -101,8 +104,8 @@ int _thread_yield(void)
 
 static void _swap_scheduler (int signal) {
   gettimeofday(&end, NULL);
-  fprintf(stderr,"thread %p, prio %d : %ld\n", curthread, curthread->priority,((end.tv_sec * 1000000 + end.tv_usec)-(start.tv_sec * 1000000 + start.tv_usec)));	
-
+  fprintf(stdout, "Execution reelle : %ld us\n", 
+	  ((end.tv_sec * 1000000 + end.tv_usec)-(start.tv_sec * 1000000 + start.tv_usec)));	
   _thread_yield();
 }
 
@@ -112,16 +115,13 @@ static void _swap_scheduler (int signal) {
 static int _swap_thread(struct thread *th1, struct thread *th2)
 {
         
-
 	int rv = 0;
 	curthread = th2;
-	ualarm(th2->priority * TIMESLICE, 0);
-	gettimeofday(&start, NULL);
+
 	rv = swapcontext(&th1->uc, &th2->uc);
-	
 
 	if (rv) {
-		perror("swapcontext");
+	  perror("swapcontext");
 	}
 
 	return rv;
@@ -183,11 +183,6 @@ static int _initialize_thread_priority(thread_t *newthread, void *(*func)(void *
 
 	return 0;
 }
-
-static int _initialize_thread(thread_t *newthread, void *(*func)(void *), void *funcarg) {
- return _initialize_thread_priority(newthread, func, funcarg, 1);
-}
-
 
 static void _insert_thread(thread_t newthread){
 	LIST_INSERT_HEAD(&ready, newthread, threads);
@@ -254,10 +249,10 @@ int thread_join(thread_t thread, void **retval)
 	*retval = thread->retval;
 
 	if (thread != &mainthread) {
-		// libérer ressource
-		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-		free(thread->uc.uc_stack.ss_sp);
-		free(thread);
+	  // libérer ressource
+	  VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
+	  free(thread->uc.uc_stack.ss_sp);
+	  free(thread);
 	}
 
 	return rv;

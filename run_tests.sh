@@ -10,7 +10,7 @@ echo "------------------------------------------------"
 echo "TEST: 12-join-main"
 ./tests/12-join-main
 echo "------------------------------------------------"
-echo "TEST: 13-join-cascade 200"
+echo "TEST: 13-join-cascade"
 ./tests/13-join-cascade 200
 echo "------------------------------------------------"
 echo "TEST: 21-create-many 200"

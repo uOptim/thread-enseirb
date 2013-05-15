@@ -1,24 +1,15 @@
-#define _GNU_SOURCE
-#include <ucontext.h>
+#include "thread.h"
+#include "queue.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-<<<<<<< HEAD
 #include <ucontext.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/time.h>
-=======
-#include <unistd.h>
-#include <signal.h>
-#include <sys/syscall.h>
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 
-#include <pthread.h>
-#include <semaphore.h>
 #include <valgrind/valgrind.h>
 
-<<<<<<< HEAD
 #define TIMESLICE 100000
 
 /* Affichage du temps pour la préemption avec priorité*/
@@ -26,78 +17,36 @@ struct timeval start, end;
 
 static char init = 0;
 static struct sigaction alarm_scheduler;
-=======
-#include <assert.h>
 
-#include "queue.h"
-#include "thread.h"
-
-#ifndef NBKTHREADS
-#define NBKTHREADS 2 // INCLUDING the main thread!
-#endif
-
-#define CONTEXT_STACK_SIZE 32*1024 /* 32 KB stack size for contexts */
-#define KTHREAD_STACK_SIZE 4*1024  /* 4 KB stack size for kernel threads */
-
-#define GETTID syscall(SYS_gettid)
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
-
-static int maintid;
-
-pthread_t kthreads[NBKTHREADS-1];
+static struct thread mainthread;
+static struct thread *curthread  = &mainthread; // thread courrant
+static struct thread *nextthread = NULL;        // thread suivant schedulé
 
 
 struct thread {
-	ucontext_t uc, *uc_prev;
-
+	unsigned int id;
 	char isdone;
 	void *retval;
 
-<<<<<<< HEAD
   int priority; 
 	ucontext_t uc;
 	LIST_ENTRY(thread) threads; // liste de threads
-=======
-	struct thread *caller;  // points to the thread that called swapcontext
 
-	TAILQ_ENTRY(thread) threads;
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
-
-	pthread_mutex_t mtx;
 	int valgrind_stackid;
-
-	// NOTE:
-	// * When run, a thread will attempt to unlock whatever is pointed by
-	// caller. Make sure to set this to NULL if the swapcontext is done from
-	// the stack of a kernel thread as opposed to the stack of a context. If
-	// the swapcontext is done from another thread's context, make it point to
-	// that thread.
 };
 
-static pthread_key_t key_self;
-static struct thread *_mainth;
 
-static sem_t nbready;
-static unsigned int thcount = 1; // one thread at start time
-static pthread_mutex_t thcountmtx = PTHREAD_MUTEX_INITIALIZER;
+/* Generation structure de liste doublement chainée des threads */
+LIST_HEAD(tqueue, thread) ready, done;
 
-<<<<<<< HEAD
 			  static int _swap_thread(struct thread *th1, struct thread *th2);
 			  static void _swap_scheduler(int sig);
 
 
-=======
-static TAILQ_HEAD(threadqueue, thread) ready;
-static pthread_mutex_t readymtx = PTHREAD_MUTEX_INITIALIZER;
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 
 
-/******************************************/
-/*       SOME UTILITY FUNCTIONS           */
-/******************************************/
-struct thread *_thread_new(void)
+static void __init()
 {
-<<<<<<< HEAD
 	mainthread.id = 0;
 	mainthread.isdone = 0;
 	mainthread.retval = NULL;
@@ -158,293 +107,66 @@ static void _swap_scheduler (int signal) {
   fprintf(stdout, "Execution reelle : %ld us\n", 
 	  ((end.tv_sec * 1000000 + end.tv_usec)-(start.tv_sec * 1000000 + start.tv_usec)));	
   _thread_yield();
-=======
-	struct thread *t;
-
-	t = malloc(sizeof *t);
-
-	if (NULL == t) {
-		perror("malloc");
-		return NULL;
-	}
-
-	t->isdone = 0;
-	t->caller = NULL;
-	t->retval = NULL;
-	t->uc_prev = NULL;
-	t->uc.uc_link = NULL;
-
-	pthread_mutex_init(&t->mtx, NULL);
-	pthread_mutex_lock(&t->mtx);
-
-	return t;
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 }
 
 
-static void _add_job(struct thread *t)
+// Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non
+// mis à jour.
+static int _swap_thread(struct thread *th1, struct thread *th2)
 {
-<<<<<<< HEAD
         
 	int rv = 0;
 	curthread = th2;
-=======
-	pthread_mutex_lock(&readymtx);
-	TAILQ_INSERT_TAIL(&ready, t, threads);
-	pthread_mutex_unlock(&t->mtx);
-	pthread_mutex_unlock(&readymtx);
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 
-	sem_post(&nbready);
-}
-
-
-static struct thread *_get_job(void)
-{
-	struct thread *t;
-
-	pthread_mutex_lock(&readymtx);
-	if (NULL != (t = TAILQ_FIRST(&ready))) {
-		assert(!t->isdone);
-		TAILQ_REMOVE(&ready, t, threads);
-	}
-	pthread_mutex_unlock(&readymtx);
-
-	if (t) {
-		pthread_mutex_lock(&t->mtx);
-	}
-
-	return t;
-}
-
-
-// Threads MUST call this function instead of swapcontext
-static int _magicswap(struct thread *self, struct thread *th)
-{
-	int rv;
-	struct thread *caller;
-
-	{ /* in the calling thread */
-		assert(th);
-		assert(!th->isdone);
-
-#ifdef SWAPINFO
-		fprintf(stderr, "* Magicswap in (tid %ld) %p --> %p\n",
-				GETTID, self, th);
-#endif
-
-		// init next job
-		th->caller = self;
-		th->uc_prev = self->uc_prev;
-
-		pthread_setspecific(key_self, th);
-	}
-
-	// POOF 
-	rv = swapcontext(&self->uc, &th->uc);
+	rv = swapcontext(&th1->uc, &th2->uc);
 
 	if (rv) {
 	  perror("swapcontext");
-	}
-
-	{ /* in some thread, we don't know who we are yet */
-		// release the thread that called swap
-		self = thread_self();
-		caller = self->caller;
-
-		assert(!self->isdone);
-
-#ifdef SWAPINFO
-		fprintf(stderr, "* Magicswap out (tid %ld) now in %p\n",
-				GETTID, self);
-#endif
-
-		// caller may be NULL in the following scenario:
-		// th1 calls _magicswap and goes to sleep when calling swapcontext. It
-		// is then unlocked by th2 which he called. th2 adds th1 to the job
-		// queue. A thread that falled back to _clone_func dequeue th1 and
-		// resumes it.
-		if (caller) {
-#ifdef SWAPINFO
-			fprintf(stderr, "* releasing caller from Magicswap %p\n", caller);
-#endif
-			if (!caller->isdone) {
-				// add job will unlock the caller
-				_add_job(caller);
-			} else {
-				pthread_mutex_unlock(&caller->mtx);
-			}
-		}
 	}
 
 	return rv;
 }
 
 
-static void * _clone_func(void *arg)
+// sert à capturer la valeur de retour des threads ne faisant pas de
+// thread_exit() mais un return
+static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
 {
-	ucontext_t uc;
-	struct thread *t;
-
-
-	// main loop
-	while (1) {
-		// release the job that called us if any
-		t = thread_self();
-		if (t != NULL) {
-#ifdef SWAPINFO
-			fprintf(stderr, "* unlock from _clone_func %p\n", t);
-#endif
-			if (!t->isdone) {
-				_add_job(t);
-			} else {
-				pthread_mutex_unlock(&t->mtx);
-			}
-		}
-
-		// get a new job
-		sem_wait(&nbready);
-		t = _get_job();
-		assert(t != NULL);
-
-		// update 'self' thread
-		pthread_setspecific(key_self, t);
-
-		// swap
-		t->uc_prev = &uc;
-		t->caller = NULL;
-		swapcontext(&uc, &t->uc);
-	}
-
-	pthread_exit(NULL);
-}
-
-
-static void _run(void *(*func)(void*), void *funcarg)
-{
-	struct thread *self, *caller;
-
-	// release the thread that called swap
-	self = thread_self();
-	caller = self->caller;
-
-#ifdef SWAPINFO
-	fprintf(stderr, "Job %p started\n", self);
-#endif
-
-	if (caller) {
-#ifdef SWAPINFO
-		fprintf(stderr, "* releasing caller from _run %p\n", caller);
-#endif
-		if (!caller->isdone) {
-			// add job will unlock the caller
-			_add_job(caller);
-		} else {
-			pthread_mutex_unlock(&caller->mtx);
-		}
-	}
-
 	void *retval;
 	retval = func(funcarg);
 	thread_exit(retval);
 }
 
 
-/******************************************/
-/*       CONSTRUCTOR & DESTRUCTOR         */
-/******************************************/
-__attribute__((constructor(101)))
-static void __init()
+thread_t thread_self(void)
 {
-	int i, rv;
+	if (!init) __init();
 
-	TAILQ_INIT(&ready);
-	sem_init(&nbready, 1, 0);
-
-	// remember which thread started everything
-	maintid = GETTID;
-
-	// add this thread to the list
-	if (NULL == (_mainth = _thread_new())) {
-		exit(EXIT_FAILURE);
-	}
-
-	getcontext(&_mainth->uc);
-	_mainth->uc_prev = &_mainth->uc;
-
-	// per-thread data
-	pthread_key_create(&key_self, NULL);
-	pthread_setspecific(key_self, _mainth); // 'self' is now _mainth
-
-	// spawn more kernel threads
-	for (i = 0; i < NBKTHREADS-1; i++) {
-		rv = pthread_create(&kthreads[i], NULL, _clone_func, NULL);
-
-		if (rv != 0) {
-			perror("pthread_create");
-			exit(EXIT_FAILURE);
-		}
-
-		pthread_detach(kthreads[i]);
-	}
+	return curthread;
 }
 
 
-<<<<<<< HEAD
 
 
 static int _initialize_thread_priority(thread_t *newthread, void *(*func)(void *), void *funcarg, int prio) {
 	static unsigned int id = 1;
-=======
-__attribute__((destructor))
-static void __destroy()
-{
-	int i;
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 
-	for (i = 0; i < NBKTHREADS-1; i++) {
-		pthread_cancel(kthreads[i]);
-	}
+	if (!init) __init();
 
-	// special case for the main thread that may not be joined or may not call
-	// thread_exit()
-	if (_mainth) {
-		pthread_mutex_unlock(&_mainth->mtx);
-		free(_mainth);
-	}
-}
+	*newthread = malloc(sizeof (struct thread));
 
-
-/******************************************/
-/*       IMPLEMENTATION FUNCTIONS         */
-/******************************************/
-int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
-{
-	void *stack;
-
-	if (NULL == (*newthread = _thread_new())){
-		return -1;
-	}
-
-	stack = malloc(CONTEXT_STACK_SIZE);
-	if (NULL == stack) {
+	if (*newthread == NULL) {
 		perror("malloc");
-		free(*newthread);
 		return -1;
 	}
 
 	getcontext(&(*newthread)->uc);
-<<<<<<< HEAD
 	(*newthread)->id = id++;
 	(*newthread)->isdone = 0;
 	(*newthread)->retval = NULL;
 	(*newthread)->priority = prio;
 	(*newthread)->uc.uc_link = &mainthread.uc;
 	(*newthread)->uc.uc_stack.ss_size = 64*1024;
-=======
-	(*newthread)->uc.uc_stack.ss_sp = stack;
-	(*newthread)->uc.uc_stack.ss_size = CONTEXT_STACK_SIZE;
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 
 	(*newthread)->valgrind_stackid =
 		VALGRIND_STACK_REGISTER(
@@ -452,24 +174,12 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 			(*newthread)->uc.uc_stack.ss_sp
 			+ (*newthread)->uc.uc_stack.ss_size
 		);
-	
-	makecontext(
-		&(*newthread)->uc, (void (*)(void))_run, 2, func, funcarg
-	);
 
-<<<<<<< HEAD
   	(*newthread)->uc.uc_stack.ss_sp = malloc(64*1024);
 	
   	makecontext(
 		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
 	);
-=======
-	pthread_mutex_lock(&thcountmtx);
-	thcount++;
-	pthread_mutex_unlock(&thcountmtx);
-
-	_add_job(*newthread);
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 
 	return 0;
 }
@@ -492,7 +202,6 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg){
 
 int thread_yield(void)
 {
-<<<<<<< HEAD
 
 	if (!init) __init();
 
@@ -520,144 +229,60 @@ int thread_yield(void)
 		nextthread = LIST_NEXT(self, threads);
 		// donner la main au mainthread
 		rv = _swap_thread(self, &mainthread);
-=======
-	struct thread *next;
-
-	thread_t self = thread_self();
-	assert(self != NULL);
-
-	if (!sem_trywait(&nbready)) {
-		next = _get_job();
-		assert(next != NULL);
-		_magicswap(self, next);
-	} else {
-#ifdef SWAPINFO
-		fprintf(stderr, "* yield: no other thread ready\n");
-#endif
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 	}
 
-	return 0;
+	return rv;
 }
 
 
 
 int thread_join(thread_t thread, void **retval)
 {
+	if (!init) __init();
+
 	int rv = 0;
 
-	pthread_mutex_lock(&thread->mtx);
 	while (!thread->isdone) {
-		pthread_mutex_unlock(&thread->mtx);
-		thread_yield();
-		pthread_mutex_lock(&thread->mtx);
+		rv = thread_yield();
 	}
 
 	*retval = thread->retval;
 
-<<<<<<< HEAD
 	if (thread != &mainthread) {
 	  // libérer ressource
 	  VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
 	  free(thread->uc.uc_stack.ss_sp);
 	  free(thread);
-=======
-	if (thread != _mainth) {
-		// libérer ressource
-		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-		free(thread->uc.uc_stack.ss_sp);
-		pthread_mutex_unlock(&thread->mtx);
-		free(thread);
-	} else {
-		// special case for the main thread (see __destroy)
-		pthread_mutex_unlock(&thread->mtx);
-		free(thread);
-		_mainth = NULL;
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 	}
-	
+
 	return rv;
-}
-
-
-thread_t thread_self(void)
-{
-	return pthread_getspecific(key_self);
 }
 
 
 void thread_exit(void *retval)
 {
-	int cond;
-	struct thread *next;
+	if (!init) __init();
 
-	thread_t self = thread_self();
-	assert(self != NULL);
+	struct thread *self = thread_self();
 
 	self->isdone = 1;
 	self->retval = retval;
-<<<<<<< HEAD
 	
 	if (self != &mainthread) {
 		// màj thread suivant
 		nextthread = LIST_NEXT(self, threads);
 			LIST_REMOVE(self, threads);
-=======
 
-	pthread_mutex_lock(&thcountmtx);
-	thcount--;
-	cond = (thcount == 0);
-	pthread_mutex_unlock(&thcountmtx);
-
-	if (cond) {
-		// last thread just died, clean up
-		pthread_mutex_unlock(&self->mtx);
-
-		if (self != _mainth) {
-			VALGRIND_STACK_DEREGISTER(self->valgrind_stackid);
-			//free(self->uc.uc_stack.ss_sp);
-			free(self);
-		} else {
-			// special case for _mainth
-			free(self);
-			_mainth = NULL;
-		}
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
-
-		exit(EXIT_SUCCESS);
+		// repasser au main
+		_swap_thread(self, &mainthread);
 	}
 
 	else {
-<<<<<<< HEAD
 		do {		  
 			thread_yield();
 		} while (!LIST_EMPTY(&ready));
-=======
-		// this wasn't the last thread, either swap to another thread if
-		// possible or fallback to the _clone_func to wait for new jobs.
-		if (!sem_trywait(&nbready)) {
-			next = _get_job();
-			assert(next != NULL);
-			_magicswap(self, next);
-		}
-		
-		else {
-			if (GETTID == maintid) {
-#ifdef SWAPINFO
-				fprintf(stderr, "MAIN fall back to the infinite loop\n");
-#endif
-				_clone_func(NULL);
-			} else {
-#ifdef SWAPINFO
-				fprintf(stderr, "CLONE fall back to the infinite loop\n");
-#endif
-				swapcontext(&self->uc, self->uc_prev);
-			}
-		}
->>>>>>> db3decf73e13194e894b4356a43978341b5a073f
 	}
 
-	// we should never reach this point
-	assert(0);
+	exit(0);
 }
 

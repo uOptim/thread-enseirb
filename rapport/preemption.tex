@@ -1,18 +1,10 @@
-L'implémentation de la préemption est en cours. Nous avons utilisé la fonction
-$ualarm$ pour envoyer un signal d'alarme $SIGALRM$ à intervalles réguliers. Ce
-signal est bloqué par un gestionnaire de signaux initialisé en même temps que
-la bibliothèque $thread.h$. Le handler correspondant à ce gestionnaire est
-donc appelé et passe la main du contexte courant à un contexte spécialement
-dédié à l'ordonnancement. Ce contexte ordonnanceur passe la main au contexte
-suivant de la liste $ready$. Une amélioration prévue est de laisser chaque
-thread démarrer le contexte suivant afin de limiter le nombre d'appels à
-\verb!swapcontext()!.
+Nous avons utilisé la fonction $ualarm$ pour envoyer un signal d'alarme $SIGALRM$ à intervalles réguliers. Ce signal est bloqué par un gestionnaire de signaux initialisé en même temps que la bibliothèque $thread.h$. Le handler correspondant à ce gestionnaire est donc appelé. 
+
+Dans un premier temps, il passait la main du contexte courant à un contexte spécialement dédié à l'ordonnancement. Ce contexte ordonnanceur passait la main au contexte suivant de la liste $ready$.  Nous avons cependant rencontré des difficultés à implémenter la préemption de cette manière (incohérences lors des changements de contexte). De plus, cette solution ne semblait pas optimale, en raison d'un nombre élevé de changements de contextes, à la fois coûteux et peu utiles.
+
+Par conséquent, nous avons appelé directement la fonction $thread\_yield$ dans le handler. Cette fonction prenait en compte le cas particulier du thread main. Lorsque l'on se trouvait dans le main, on passait la main au thread suivant dans la liste $ready$. Ceci causait le même problème qu'avec le contexte dédié, car à chaque fois que l'on voulait passer la main au thread suivan dans $ready$, on repassait d'abord par le main. Nous avons donc implémenté une fonction similaire à $thread\_yield$, qui évite ce problème en ne repassant plus la main au main. 
 
 Dans le cas particulier où la liste $ready$ est vide ou ne comprend qu'un seul
 thread, il n'est pas nécessaire d'avoir recours à la préemption. Il faut donc
 désactiver le gestionnaire correspondant à $SIGALRM$ jusqu'à ce qu'un nouveau
 thread soit inséré dans la liste.
-
-Une fois la préemption fonctionnelle, nous envisageons de mettre en place la
-gestion des priorités. Elle sera réalisée grâce à la préemption, en donnant
-plus souvent la main aux processus de haute priorité.

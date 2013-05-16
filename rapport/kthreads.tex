@@ -4,13 +4,13 @@ Dans cette partie, afin d'alléger les phrases, une tâche est synonyme de threa
 
 Afin d'utiliser tous les processeurs disponibles, un certain nombre (fixé à la compilation) de threads noyaux sont créés lors de l'initialisation de la bibliothèque. Ce nombre inclut le thread principal qui n'est pas distinguable des threads créés du point de vue de l'utilisateur. Les threads alors créés entrent dans une boucle infinie dans laquelle ils vont consommer des tâches à réaliser placés dans une file.
 
-Ces tâches sont celles crées par l'utilisateur via la fonction \verb!thread_create()! de la bibliothèque. Ils sont définis par un contexte et quelques attributs sur leur état.
+Ces tâches sont celles créées par l'utilisateur via la fonction \verb!thread_create()! de la bibliothèque. Elles sont définies par un contexte et quelques attributs sur leur état.
 
 
 \subsubsection{Threads noyaux}
 
 \paragraph{Avec clone()}
-Nous avons tout d'abord utilisé l'appel système \verb!clone()! avec notamment les flags \verb!CLONE_VM! (partage de la mémoire), \verb!CLONE_THREADS! (processus créés dans un même groupe de threads), etc. Cette solution a bien abouti mais nous a permise de nous rendre compte de plusieurs problèmes.
+Nous avons tout d'abord utilisé l'appel système \verb!clone()! avec notamment les flags \verb!CLONE_VM! (partage de la mémoire), \verb!CLONE_THREADS! (processus créés dans un même groupe de threads), etc. Cette solution a bien abouti mais nous a permis de nous rendre compte de plusieurs problèmes.
 
 Le premier est le stockage de données propres au thread qui sont utiles pour les distinguer et rendre l'appel à \verb!thread_self()! efficace. L'idée était alors de conserver un pointeur global vers le thread utilisateur courant qui lui permettrait, lorsqu'il est exécuté sur un thread noyau, d'avoir un accès immédiat vers la structure qui le représente. Une solution (non portable) proposée par gcc est de déclarer des variables avec l'attribut \verb!__thread! mais nous ne sommes pas parvenu à obtenir le comportement souhaité car la valeur du pointeur semblait partagée entre tous les processus malgré tout. Nous avons donc changé d'approche et avons résolu notre problème en créant un tableau associant un l'identifiant d'un thread noyau (obtenu via \verb!gettid()!) à un thread utilisateur. Cette solution nécessite donc le parcours d'un tableau de taille égale au nombre de threads noyaux à chaque fois que l'on souhaite identifier quel thread utilisateur est exécuté.
 
@@ -20,7 +20,7 @@ Le second problème provient de glibc. En effet, lorsque l'on dit que glibc est
 \footnote{\url{http://osdir.com/ml/lib.glibc.bugs/2003-01/msg00012.html}}.
 Nous nous en sommes rendu compte lors d'appels intensifs vers \verb!malloc!
 pour la création de threads utilisateur dans les tests comme fibonacci : nous
-obtenions des corruption du tas laissant penser que malloc n'était pas
+obtenions des corruptions du tas laissant penser que malloc n'était pas
 thread-safe!  L'explication est simple : l'ensemble de glibc dépend énormément
 du fonctionnement de pthread pour les applications multi-threadées et fait des
 ajustements pour avoir un comportement correct dans ce type de programme. En
@@ -53,6 +53,6 @@ Suivant la quantité de threads noyaux et de tâches, trois cas peuvent se prés
 \item Sinon, la file n'est pas vide donc appeler une fonction de changement de contexte \verb!_magicswap()! détaillée plus loin.
 \end{itemize}
 
-\paragraph{Changements de contextes avec \_magicswap} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le un thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
+\paragraph{Changements de contextes avec \_magicswap} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
 
 Avec ce schéma et s'il l'on souhaite ne pas repasser au contexte du thread noyau pour réaliser la libération de l'ancienne tâche et le verrouillage d'une nouvelle, il faut pouvoir indiquer à une tâche sa tâche appelante afin de réaliser la libération.

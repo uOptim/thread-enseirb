@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 
+#define THREAD_CANCEL_ENABLE       0
+#define THREAD_CANCEL_DISABLE      1
+
 
 /* identifiant de thread */
 typedef struct thread * thread_t;
@@ -20,6 +23,17 @@ int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg);
 /* passer la main à un autre thread.
  */
 int thread_yield(void);
+
+/* changer l'état d'annulation du thread entre activé et désactivé.
+ * retourne 0 en cas de succès.
+ */
+int thread_setcancelstate(int state, int *oldstate);
+
+/* changer le type d'annulation du thread entre asynchrone et déférré.
+ * retourne 0 en cas de succès.
+ */
+
+int thread_cancel(thread_t thread);
 
 /* attendre la fin d'exécution d'un thread.
  * la valeur renvoyée par le thread est placée dans *retval.

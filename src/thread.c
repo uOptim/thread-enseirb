@@ -106,27 +106,27 @@ static void _add_job(struct thread *t)
 		
 		sem_post(&nbready);
 		
-		return;
-	}
-
-	t->isdone = 0;
-	t->retval = NULL;
-
-	pthread_mutex_lock(&thcountmtx);
-	thcount--;
-	pthread_mutex_unlock(&thcountmtx);
-
-	if (t != _mainth) {
-		// libérer ressource
-		VALGRIND_STACK_DEREGISTER(t->valgrind_stackid);
-		free(t->uc.uc_stack.ss_sp);
-		pthread_mutex_unlock(&t->mtx);
-		free(t);
 	} else {
-		// special case for the main t (see __destroy)
-		pthread_mutex_unlock(&t->mtx);
-		free(t);
-		_mainth = NULL;
+
+		t->isdone = 0;
+		t->retval = NULL;
+
+		pthread_mutex_lock(&thcountmtx);
+		thcount--;
+		pthread_mutex_unlock(&thcountmtx);
+
+		if (t != _mainth) {
+			// libérer ressource
+			VALGRIND_STACK_DEREGISTER(t->valgrind_stackid);
+			free(t->uc.uc_stack.ss_sp);
+			pthread_mutex_unlock(&t->mtx);
+			free(t);
+		} else {
+			// special case for the main t (see __destroy)
+			pthread_mutex_unlock(&t->mtx);
+			free(t);
+			_mainth = NULL;
+		}
 	}
 }
 
@@ -218,12 +218,11 @@ static void * _clone_func(void *arg)
 	ucontext_t uc;
 	struct thread *t;
 
-
 	// main loop
 	while (1) {
 		// release the job that called us if any
 		t = thread_self();
-		if (t != NULL) {
+		if (t) {
 #ifdef SWAPINFO
 			fprintf(stderr, "* unlock from _clone_func %p\n", t);
 #endif
@@ -238,6 +237,7 @@ static void * _clone_func(void *arg)
 		sem_wait(&nbready);
 		t = _get_job();
 		assert(t != NULL);
+		assert(!t->isdone);
 
 		// update 'self' thread
 		pthread_setspecific(key_self, t);
@@ -327,9 +327,9 @@ static void __destroy()
 {
 	int i;
 
-	for (i = 0; i < NBKTHREADS-1; i++) {
-		pthread_cancel(kthreads[i]);
-	}
+	//for (i = 0; i < NBKTHREADS-1; i++) {
+	//	pthread_cancel(kthreads[i]);
+	//}
 
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
@@ -415,8 +415,7 @@ int thread_setcancelstate(int state, int *oldstate)
 	
 	assert(self != NULL);
 
-	if (oldstate)
-	{
+	if (oldstate) {
 		*oldstate = self->state;
 	}
 	
@@ -429,12 +428,9 @@ int thread_cancel(thread_t thread)
 {
 	assert(thread != NULL);
 	
-	if (thread_self() == thread)
-	{
+	if (thread_self() == thread) {
 		thread->canceled = 1;	
-	}
-	else
-	{
+	} else {
 		pthread_mutex_lock(&thread->mtx);
 		thread->canceled = 1;
 		pthread_mutex_unlock(&thread->mtx);
@@ -496,7 +492,7 @@ void thread_exit(void *retval)
 
 		if (self != _mainth) {
 			VALGRIND_STACK_DEREGISTER(self->valgrind_stackid);
-			//free(self->uc.uc_stack.ss_sp);
+			free(self->uc.uc_stack.ss_sp);
 			free(self);
 		} else {
 			// special case for _mainth

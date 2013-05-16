@@ -17,5 +17,5 @@ TESTS
 	Les tests peuvent être lancé de 2 façons différentes.
 	Soit via le script run_test.sh, soit avec la commande :
 	
-	make test
+	make check
 

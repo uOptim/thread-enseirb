@@ -1,5 +1,8 @@
-# Object files
+# Object and source files
 *.o
+src/contextes
+src/example
+src/example-pthread
 
 # Libraries
 *.lib
@@ -25,3 +28,15 @@ Makefile
 # Backup files
 *.swp
 *~
+
+# Dirs
+tests/*
+!tests/*.c
+!tests/CMakeLists.txt
+
+# Other
+*.pdf
+*.toc
+*.aux
+*.log
+tags

@@ -41,3 +41,6 @@ target_link_libraries (54-mergesort thread)
 
 add_executable (55-increment 55-increment.c)
 target_link_libraries (55-increment thread)
+
+add_executable (56-cancel 56-cancel.c)
+target_link_libraries (56-cancel thread)

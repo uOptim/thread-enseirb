@@ -111,11 +111,23 @@ static void _add_job(struct thread *t)
 
 	t->isdone = 0;
 	t->retval = NULL;
-	pthread_mutex_unlock(&t->mtx);
 
 	pthread_mutex_lock(&thcountmtx);
 	thcount--;
 	pthread_mutex_unlock(&thcountmtx);
+
+	if (t != _mainth) {
+		// libérer ressource
+		VALGRIND_STACK_DEREGISTER(t->valgrind_stackid);
+		free(t->uc.uc_stack.ss_sp);
+		pthread_mutex_unlock(&t->mtx);
+		free(t);
+	} else {
+		// special case for the main t (see __destroy)
+		pthread_mutex_unlock(&t->mtx);
+		free(t);
+		_mainth = NULL;
+	}
 }
 
 

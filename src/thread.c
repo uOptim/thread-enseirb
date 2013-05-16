@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 
+#include <assert.h>
 #include <valgrind/valgrind.h>
 
 #define TIMESLICE 100000
@@ -15,20 +16,17 @@
 /* Affichage du temps pour la préemption avec priorité*/
 struct timeval start, end;
 
-static char init = 0;
 static struct sigaction alarm_scheduler;
 
-static struct thread mainthread;
-static struct thread *curthread  = &mainthread; // thread courrant
-static struct thread *nextthread = NULL;        // thread suivant schedulé
+static struct thread *mainthread = NULL;
+	static struct thread *curthread = NULL; // thread courrant
 
 
 struct thread {
-	unsigned int id;
 	char isdone;
 	void *retval;
 
-  int priority; 
+	int priority; 
 	ucontext_t uc;
 	LIST_ENTRY(thread) threads; // liste de threads
 
@@ -37,92 +35,101 @@ struct thread {
 
 
 /* Generation structure de liste doublement chainée des threads */
-LIST_HEAD(tqueue, thread) ready, done;
+LIST_HEAD(tqueue, thread) ready;
 
-			  static int _swap_thread(struct thread *th1, struct thread *th2);
-			  static void _swap_scheduler(int sig);
-
-
+static int _swap_thread(struct thread *th1, struct thread *th2);
+static void _swap_scheduler(int sig);
 
 
+static struct thread *_thread_new()
+{
+	struct thread *t;
+
+	if (NULL != (t = malloc(sizeof *t))) {
+		t->isdone = 0;
+		t->priority = 1;
+		t->retval = NULL;
+		getcontext(&t->uc);
+	}
+
+	return t;
+}
+
+
+__attribute__((constructor))
 static void __init()
 {
-	mainthread.id = 0;
-	mainthread.isdone = 0;
-	mainthread.retval = NULL;
+	mainthread = _thread_new();
 
-	getcontext(&mainthread.uc);
+	if (mainthread == NULL) {
+		exit(EXIT_FAILURE);
+	}
+
+	curthread = mainthread;
 
 	LIST_INIT(&ready);
-	init = 1;
+	LIST_INSERT_HEAD(&ready, mainthread, threads);
 
-	alarm_scheduler.sa_flags = SA_RESTART;
-  	alarm_scheduler.sa_handler = _swap_scheduler;
-	sigfillset(&alarm_scheduler.sa_mask);
-	sigaddset(&alarm_scheduler.sa_mask, SIGALRM);
+//	alarm_scheduler.sa_flags = SA_RESTART;
+//	alarm_scheduler.sa_handler = _swap_scheduler;
+//	sigemptyset(&alarm_scheduler.sa_mask);
+//	sigaddset(&alarm_scheduler.sa_mask, SIGALRM);
 
 	if(sigaction(SIGALRM, &alarm_scheduler, NULL) == -1 ){
-	  perror("[ERROR] sigaction initialization");
-	  exit(2);
+		perror("[ERROR] sigaction initialization");
+		exit(2);
 	}
-	
+
+	//ualarm(TIMESLICE, 0);
 	/* Execution du main pendant TIMESLICE */
-	printf("Main -- priorité 1 par défaut \n");
-	ualarm(TIMESLICE, 0);
+	fprintf(stderr, "Main -- priorité 1 par défaut \n");
 	gettimeofday(&start, NULL);
-
 }
 
 
-
-
-int _thread_yield(void)
+__attribute__((destructor))
+static void __destroy()
 {
-	if (!init) __init();
-	int rv = 0;
-	struct thread *self = thread_self();
-
-	//cas où on arrive en bout de liste : on reboucle sur la tete
-	if (nextthread == NULL && !LIST_EMPTY(&ready)) {
-	  nextthread = LIST_FIRST(&ready);
-	}
-	else
-	  nextthread = LIST_NEXT(self, threads);
-	// swapcontext si thread schedulé
-	if (nextthread != NULL) {
-
-	  fprintf(stdout, "prio : %d (temps théorique d'execution : %d) - ", nextthread->priority, (nextthread->priority * TIMESLICE));
-	  ualarm(nextthread->priority * TIMESLICE, 0);
-	  gettimeofday(&start, NULL);
-	  
-	  rv = _swap_thread(self, nextthread); 
-	
-	}
-
-	return rv;
+	free(mainthread);
 }
+
 
 static void _swap_scheduler (int signal) {
-  gettimeofday(&end, NULL);
-  fprintf(stdout, "Execution reelle : %ld us\n", 
-	  ((end.tv_sec * 1000000 + end.tv_usec)-(start.tv_sec * 1000000 + start.tv_usec)));	
-  _thread_yield();
+	thread_yield();
 }
 
 
-// Utiliser cette fonction pour éviter 1h de debugage à cause de curthread non
-// mis à jour.
 static int _swap_thread(struct thread *th1, struct thread *th2)
 {
-        
 	int rv = 0;
+
 	curthread = th2;
+	assert(!th2->isdone);
 
+	// afficher le temps d'exécution du threads précédent
+//	gettimeofday(&end, NULL);
+//	fprintf(stderr, "Execution reelle : %ld us\n", 
+//			((end.tv_sec * 1000000 + end.tv_usec)
+//			 -(start.tv_sec * 1000000 + start.tv_usec)));	
+//
+//	// demarrer le nouveau thread
+//	gettimeofday(&start, NULL);
+//	fprintf(stderr, "prio : %d (temps théorique d'execution : %d)\n",
+//			th2->priority, (th2->priority * TIMESLICE));
+
+	// Poof!
 	rv = swapcontext(&th1->uc, &th2->uc);
-
 	if (rv) {
-	  perror("swapcontext");
+		perror("swapcontext");
 	}
+
+	struct thread *self;
+	self = thread_self();
+	assert(self != NULL);
+	assert(!self->isdone);
+
+	// nouvelle alarme selon le timeslice
+	//ualarm(curthread->priority * TIMESLICE, 0);
 
 	return rv;
 }
@@ -130,9 +137,15 @@ static int _swap_thread(struct thread *th1, struct thread *th2)
 
 // sert à capturer la valeur de retour des threads ne faisant pas de
 // thread_exit() mais un return
-static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
+static void _run(void *(*func)(void*), void *funcarg)
 {
 	void *retval;
+
+	// nouvelle alarme selon le timeslice
+	//ualarm(curthread->priority * TIMESLICE, 0);
+	
+	assert(func);
+	
 	retval = func(funcarg);
 	thread_exit(retval);
 }
@@ -140,32 +153,25 @@ static void _run(struct thread *th, void *(*func)(void*), void *funcarg)
 
 thread_t thread_self(void)
 {
-	if (!init) __init();
-
 	return curthread;
 }
 
 
-
-
-static int _initialize_thread_priority(thread_t *newthread, void *(*func)(void *), void *funcarg, int prio) {
-	static unsigned int id = 1;
-
-	if (!init) __init();
-
-	*newthread = malloc(sizeof (struct thread));
+static int _initialize_thread_priority(
+	thread_t *newthread,
+	void *(*func)(void *),
+	void *funcarg,
+	int prio
+) {
+	*newthread = _thread_new();
 
 	if (*newthread == NULL) {
 		perror("malloc");
 		return -1;
 	}
 
-	getcontext(&(*newthread)->uc);
-	(*newthread)->id = id++;
-	(*newthread)->isdone = 0;
-	(*newthread)->retval = NULL;
-	(*newthread)->priority = prio;
-	(*newthread)->uc.uc_link = &mainthread.uc;
+	(*newthread)->priority = (prio > 0) ? prio : 1;
+	(*newthread)->uc.uc_link = NULL; //&mainthread.uc;
 	(*newthread)->uc.uc_stack.ss_size = 64*1024;
 
 	(*newthread)->valgrind_stackid =
@@ -173,63 +179,63 @@ static int _initialize_thread_priority(thread_t *newthread, void *(*func)(void *
 			(*newthread)->uc.uc_stack.ss_sp,
 			(*newthread)->uc.uc_stack.ss_sp
 			+ (*newthread)->uc.uc_stack.ss_size
-		);
+			);
 
-  	(*newthread)->uc.uc_stack.ss_sp = malloc(64*1024);
-	
-  	makecontext(
-		&(*newthread)->uc, (void (*)(void))_run, 3, *newthread, func, funcarg
+	(*newthread)->uc.uc_stack.ss_sp = malloc(64*1024);
+
+	makecontext(
+		&(*newthread)->uc, (void (*)(void))_run, 2, func, funcarg
 	);
 
 	return 0;
 }
 
-static void _insert_thread(thread_t newthread){
-	LIST_INSERT_HEAD(&ready, newthread, threads);
-}
-
 
 int thread_create_priority(thread_t *newthread, void *(*func)(void *), void *funcarg, int prio)
 {
-  _initialize_thread_priority(newthread, func, funcarg, prio);
-  _insert_thread(*newthread);
-  return 0;
+	int rv = 0;
+	rv = _initialize_thread_priority(newthread, func, funcarg, prio);
+
+	if (!rv) {
+		LIST_INSERT_HEAD(&ready, *newthread, threads);
+	}
+
+	return rv;
 }
 
+
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg){
-  return thread_create_priority(newthread, func, funcarg, 1);
+	return thread_create_priority(newthread, func, funcarg, 1);
 }
+
 
 int thread_yield(void)
 {
-
-	if (!init) __init();
-
 	int rv = 0;
 
-	struct thread *self = thread_self();
+	struct thread *self;
+	struct thread *next;
 
-	// yield depuis le main
-	if (self == &mainthread) { 
-	        //cas où on arrive en bout de liste : on reboucle sur la tete
-		if (nextthread == NULL && !LIST_EMPTY(&ready)) {
-		  nextthread = LIST_FIRST(&ready);
-		}
-		// swapcontext si thread schedulé
-		if (nextthread != NULL) {
-		  rv = _swap_thread(self, nextthread);
-		}
-		
-		// sinon ne rien faire (rester dans main)
-	} 
+	self = thread_self();
+	assert(self != NULL);
 
-	// yield depuis un thread != du main
-	else { 
-		// màj thread suivant
-		nextthread = LIST_NEXT(self, threads);
-		// donner la main au mainthread
-		rv = _swap_thread(self, &mainthread);
+	assert(!LIST_EMPTY(&ready));
+	next = LIST_NEXT(self, threads);
+
+	//cas où on arrive en bout de liste : on reboucle sur la tete
+	if (next == NULL) {
+		next = LIST_FIRST(&ready);
 	}
+
+	assert(next);
+	assert(!next->isdone);
+
+	// swapcontext si nouveau thread schedulé
+	if (next != curthread) {
+		rv = _swap_thread(self, next);
+	}
+
+	// sinon ne rien faire
 
 	return rv;
 }
@@ -238,21 +244,19 @@ int thread_yield(void)
 
 int thread_join(thread_t thread, void **retval)
 {
-	if (!init) __init();
-
 	int rv = 0;
 
 	while (!thread->isdone) {
-		rv = thread_yield();
+		thread_yield();
 	}
 
 	*retval = thread->retval;
 
-	if (thread != &mainthread) {
-	  // libérer ressource
-	  VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
-	  free(thread->uc.uc_stack.ss_sp);
-	  free(thread);
+	if (thread != mainthread) {
+		// libérer ressource
+		VALGRIND_STACK_DEREGISTER(thread->valgrind_stackid);
+		//free(thread->uc.uc_stack.ss_sp);
+		//free(thread);
 	}
 
 	return rv;
@@ -261,26 +265,17 @@ int thread_join(thread_t thread, void **retval)
 
 void thread_exit(void *retval)
 {
-	if (!init) __init();
-
 	struct thread *self = thread_self();
+	assert(self != NULL);
 
 	self->isdone = 1;
 	self->retval = retval;
-	
-	if (self != &mainthread) {
-		// màj thread suivant
-		nextthread = LIST_NEXT(self, threads);
-			LIST_REMOVE(self, threads);
 
-		// repasser au main
-		_swap_thread(self, &mainthread);
-	}
+	LIST_REMOVE(self, threads);
 
-	else {
-		do {		  
-			thread_yield();
-		} while (!LIST_EMPTY(&ready));
+	if (!LIST_EMPTY(&ready)) {
+		thread_yield();
+		assert(0);
 	}
 
 	exit(0);

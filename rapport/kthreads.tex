@@ -50,9 +50,9 @@ L'ordonnancement de plusieurs tâches sur l'ensemble des threads noyaux est réa
 
 En fonction de la quantité de threads noyaux et de tâches, trois cas peuvent se présenter :
 \begin{itemize}
-	\item Si la file de tâches est vide et que le thread utilisateur courant est terminé, alors on repasse dans le contexte thread noyau pour attendre de nouvelles tâches sauf s'il l'on détecte que nous sommes le tout dernier thread exécuté auquel cas le programme termine. Dans le cas où ce thread noyau est le thread principal, on lance la fonction d'attente sur la file \verb!_clone_func()!. Ce cas particulier du thread principal n'est exécuté qu'une seule fois et, après cela, il n'est plus faite de distinction concernant l'ordonnancement avec les autres threads noyaux.
-\item Sinon si la file est vide mais que le thread courant n'est pas fini, alors ne rien faire et continuer l'exécution.
-\item Sinon, la file n'est pas vide donc appeler une fonction de changement de contexte \verb!_magicswap()! détaillée plus loin.
+	\item Si la file de tâches est vide et que le thread utilisateur courant est terminé, alors on repasse dans le contexte thread noyau pour attendre de nouvelles tâches sauf s'il l'on détecte que nous sommes le tout dernier thread exécuté auquel cas le programme termine. Dans le cas où ce thread noyau est le thread principal, on lance la fonction d'attente sur la file \verb!_clone_func()!.
+	\item Sinon si la file est vide mais que le thread courant n'est pas fini, alors ne rien faire et continuer l'exécution.
+	\item Sinon, la file n'est pas vide donc appeler une fonction de changement de contexte \verb!_magicswap()! détaillée plus loin.
 \end{itemize}
 
 <<<<<<< HEAD

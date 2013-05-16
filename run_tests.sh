@@ -36,3 +36,9 @@ echo "TEST: 53-quicksort 100"
 echo "------------------------------------------------"
 echo "TEST: 54-mergesort 100"
 ./tests/54-mergesort 100
+echo "------------------------------------------------"
+echo "TEST: 55-increment 10000"
+./tests/55-increment 10000
+echo "------------------------------------------------"
+echo "TEST: 56-cancel"
+./tests/56-cancel

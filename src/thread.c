@@ -239,12 +239,13 @@ static void * _clone_func(void *arg)
 		assert(t != NULL);
 		assert(!t->isdone);
 
-		// update 'self' thread
-		pthread_setspecific(key_self, t);
-
 		// swap
 		t->uc_prev = &uc;
 		t->caller = NULL;
+
+		// update 'self' thread
+		pthread_setspecific(key_self, t);
+
 		swapcontext(&uc, &t->uc);
 	}
 
@@ -325,12 +326,6 @@ static void __init()
 __attribute__((destructor))
 static void __destroy()
 {
-	int i;
-
-	//for (i = 0; i < NBKTHREADS-1; i++) {
-	//	pthread_cancel(kthreads[i]);
-	//}
-
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
 	if (_mainth) {
@@ -492,7 +487,7 @@ void thread_exit(void *retval)
 
 		if (self != _mainth) {
 			VALGRIND_STACK_DEREGISTER(self->valgrind_stackid);
-			free(self->uc.uc_stack.ss_sp);
+			//free(self->uc.uc_stack.ss_sp);
 			free(self);
 		} else {
 			// special case for _mainth

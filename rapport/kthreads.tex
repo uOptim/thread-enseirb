@@ -7,7 +7,7 @@ Afin d'utiliser tous les processeurs disponibles, un certain nombre (fixé à la
 Ces tâches sont celles créées par l'utilisateur via la fonction \verb!thread_create()! de la bibliothèque. Elles sont définies par un contexte et quelques attributs sur leur état.
 
 
-\subsubsection{Threads noyaux}
+\subsubsection{Creation de threads noyaux}
 
 \paragraph{Avec clone()}
 Nous avons tout d'abord utilisé l'appel système \verb!clone()! avec notamment les flags \verb!CLONE_VM! (partage de la mémoire), \verb!CLONE_THREADS! (processus créés dans un même groupe de threads), etc. Cette solution a bien abouti mais nous a permis de nous rendre compte de plusieurs problèmes.
@@ -35,10 +35,12 @@ d'appels concurrents!
 
 
 \paragraph{Avec pthread\_create()}
-Afin de supprimer la limitation précédente, nous avons remplacé l'appel à \verb!clone()! par un appel à \verb!pthread_create()!. Les mutex avant l'allocation et la libération de mémoire ont alors pu être supprimées sans faire réaparaitre de corruption et nous avons pu utiliser des \verb!pthread_key! pour stocker un pointeur vers le thread courant et s'affranchir du parcours de tableau précédent.
+Afin de supprimer la limitation précédente, nous avons remplacé l'appel à \verb!clone()! par un appel à \verb!pthread_create()!. Les mutex avant l'allocation et la libération de mémoire ont alors pu être supprimées sans faire réaparaitre de corruption et nous avons pu utiliser des \verb!pthread_key! pour stocker un pointeur vers la tâche courante et s'affranchir du parcours de tableau précédent.
 
 
-\subsubsection{Ordonnancement}
+\subsubsection{Ordonnancement des tâches}
+
+L'ordonnancement de plusieurs tâches sur l'ensemble des threads noyaux est réalisé grâce aux techniques suivantes :
 
 \paragraph{File de tâches} Les threads utilisateur sont stockés dans une file. Un mutex et un sémaphore y sont associés pour la concurrence et le signalement de nouvelles tâches enfilées respectivement.
 
@@ -46,13 +48,19 @@ Afin de supprimer la limitation précédente, nous avons remplacé l'appel à \v
 
 \paragraph{Exécution des threads utilisateur} Pour chaque thread noyau, le thread utilisateur exécuté est responsable de l'exécution du thread utilisateur suivant. 
 
-Suivant la quantité de threads noyaux et de tâches, trois cas peuvent se présenter :
+En fonction de la quantité de threads noyaux et de tâches, trois cas peuvent se présenter :
 \begin{itemize}
-\item Si la file de tâches est vide et que le thread utilisateur courant est terminé, alors on repasse dans le contexte thread noyau pour attendre de nouvelles tâches. Dans le cas où ce thread noyau est le thread principal, on lance la fonction d'attente sur la file \verb!_clone_func()!. Ce cas particulier du thread principal n'est exécuté qu'une seule fois et, après cela, il n'est plus faite de distinction concernant l'ordonnancement avec les autres threads noyaux.
+	\item Si la file de tâches est vide et que le thread utilisateur courant est terminé, alors on repasse dans le contexte thread noyau pour attendre de nouvelles tâches sauf s'il l'on détecte que nous sommes le tout dernier thread exécuté auquel cas le programme termine. Dans le cas où ce thread noyau est le thread principal, on lance la fonction d'attente sur la file \verb!_clone_func()!. Ce cas particulier du thread principal n'est exécuté qu'une seule fois et, après cela, il n'est plus faite de distinction concernant l'ordonnancement avec les autres threads noyaux.
 \item Sinon si la file est vide mais que le thread courant n'est pas fini, alors ne rien faire et continuer l'exécution.
 \item Sinon, la file n'est pas vide donc appeler une fonction de changement de contexte \verb!_magicswap()! détaillée plus loin.
 \end{itemize}
 
+<<<<<<< HEAD
 \paragraph{Changements de contextes avec \_magicswap} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
+=======
+\paragraph{Changements de contextes avec \_magicswap()} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le un thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
+>>>>>>> 44202ee307b1f39e766600b4248cd1ba085d652d
 
 Avec ce schéma et s'il l'on souhaite ne pas repasser au contexte du thread noyau pour réaliser la libération de l'ancienne tâche et le verrouillage d'une nouvelle, il faut pouvoir indiquer à une tâche sa tâche appelante afin de réaliser la libération.
+
+Une tâche en appelant une autre doit donc préparer la tâche suivante en vérouillant son mutex, en lui indiquant qui l'a appelé, en changeant le pointeur de tâche courante du thread noyau et enfin en réalisant le changement de contexte. Une tâche venant d'être exécutée doit quant à elle récupérer son identité grâce au pointeur de tâche courante du thread noyau, libérer la tâche appelante ainsi que la replacer dans la file si elle n'est pas terminée et enfin continuer son exécution normale.

@@ -60,3 +60,21 @@ retournée et le thread parent calcule la somme des deux valeurs récupérées.
 \caption{Temps d'exécution des tests sur la somme des éléments d'un tableau}
 \label{fig:arraysum}
 \end{figure}
+
+\subsubsection{Incrémentation d'un entier avec threads noyaux}
+
+Afin de vérifier que nos threads noyaux ont été correctement implémentés, nous
+avons mis en place le test le plus basique possible. 4 threads utilisateurs
+sont créés et chacun d'eux incrémentent un entier différent jusqu'à une valeur
+définie par l'utilisateur. Ce test est ensuite lancé après avoir recompilé
+notre code pour qu'il tourne sur $n$ processeurs ($n \in [1,4]$). On observe dans la
+figure \ref{fig:comp-kthreads} les différences de temps d'exécution lorsqu'on
+lance ce test sur un processeur ou sur quatre.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/comparatif_kthreads.png}
+\caption{Temps d'exécution des tests sur l'incrémentation d'un entier avec des
+  threads noyaux}
+\label{fig:comp-kthreads}
+\end{figure}

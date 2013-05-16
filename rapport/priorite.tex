@@ -1,4 +1,4 @@
-Après l'implémention de la préemption, nous avons pu développer une gestion de la priorité. Deux possibilités s'offraient à nous : Round-robin et l'utilisation de plusieurs listes de priorités.
+En parallèle de la préemption, nous avons pu développer une gestion de la priorité. Deux possibilités s'offraient à nous : Round-robin et l'utilisation de plusieurs listes de priorités.
 
 Round-robin consiste à voir la liste de thread $ready$ comme une liste circulaire. Tout nouveau processus est placé à la fin de la liste. Le processus courant est préempté après un temps d'exécution fonction de sa priorité, et passe la main au processus suivant.
 

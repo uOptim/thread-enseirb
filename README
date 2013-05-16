@@ -1,0 +1,21 @@
+thread-enseirb
+==============
+
+README
+	thread-enseirb est une librairie permettant l'utilisation de threads
+	utilisateurs. Celle ci est aussi munie d'une panoplie de tests.
+
+	
+COMPILATION
+	Rendez vous dans le dossier thread-enseirb, puis lancez les commandes
+	suivantes :
+
+	cmake .
+	make
+
+TESTS
+	Les tests peuvent être lancé de 2 façons différentes.
+	Soit via le script run_test.sh, soit avec la commande :
+	
+	make test
+

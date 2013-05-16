@@ -1,21 +1,9 @@
 \subsection{Les tests de base}
 
 Les tests fournis passent tous avec succès dans l'implémentation dépourvue des
-améliorations 'avancées' du sujet dont certaines sont en cours de
-développement.
+améliorations 'avancées' ainsi qu'avec la version utilisant plusieurs threads noyaux avec la fonction d'annulation des threads. 
 
-Des tests avec valgrind révèlent qu'il n'y a pas de fuite mémoire lors de
-l'exécution de ces tests exception faite de ceux qui ne réalisent pas de
-\verb!thread_join()! pour chaque thread créé via \verb!thread_create()!. C'est
-le cas du test faisant un \verb!thread_join()! sur le main.
-
-C'est un défaut qu'il nous est possible de corriger en testant la présence de
-threads non joints à la fin du programme (via un destructeur) mais cela pourrait
-entrer en conflit avec le code client qui pourrait potentiellement vouloir
-faire la même chose. Nous avons donc choisi de laisser à l'utilisateur de la
-bibliothèque le soin de terminer proprement chaque thread tout comme le fait
-déjà pthread (les ressources ne sont libérées qu'après un \verb!pthread_join()!
-pour les threads non détachés).
+Pour la version supportant les machines multiprocesseur, nous avons utilisé helgrind et drd le débogage et pour s'assurer du bon fonctionnement. Drd ne trouve rien de suspect mais helgrind nous prévient que l'ordre d'acquisition des mutex n'est pas toujours respecté. Nous pouvons sereinement ignorer cet avertissement car l'ensemble des programmes de tests ne souffrent pas de deadlock (vérifié avec l'option \verb!--exclusive-threshold! de drd où les seuls mutex pris longement sont ceux des threads en cours d'exécution, ce qui est normal) et le changement d'ordre d'acquisition des mutex est nécessaire pour notre méthode d'ordonnancement.
 
 Nous avons également écrit un script pour tracer les courbes de performance
 afin de pouvoir comparer graphiquement les temps d'exécution de notre

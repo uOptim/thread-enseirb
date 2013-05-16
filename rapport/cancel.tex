@@ -1,9 +1,13 @@
 Pour l'annulation, une première implémentation à été réalisée avant la mise en oeuvre des threads noyaux. Celle-ci était alors relativement simple, 2 variables on étés rajoutés dans la structure \verb!thread! (\verb!state! et \verb!canceled!) spécifiant si l'annulation pour le thread en question est autorisée ou non, et si elle ne l'est pas, si une annulation à été demandé, car celle-ci sera effectuée lorsque le thread repassera dans l'état où une annulation est autorisé.\\
 
-Pour celà, 2 fonctions on été implémentées :
+Pour cela, 2 fonctions on été implémentées :
 \begin{itemize}
 \item \verb!thread_cancel()! : Chargée d'annuler le thread si le thread est dans l'état\\ \verb!THREAD_CANCEL_ENABLE! ou alors de placer \verb!canceled! à 1 si il est dans l'état \verb!THREAD_CANCEL_DISABLE!. Son implémentation est voisine de celle de la fonction \verb!thread_exit()!.\\
 \item \verb!thread_setcancelstate()! : Chargée de changer l'état du thread, ainsi que de l'appel de \verb!thread_cancel()! dans le cas où \verb!canceled! vaut 1 et le nouvel état est \verb! THREAD_CANCEL_ENABLE!.
 \end{itemize}
 
+<<<<<<< HEAD
+Une fois les threads noyaux implémentés, le code a du être adapté, car plus rien ne garantissait la présence du thread dans la file \verb!ready! au moment de l'appel de \verb!thread_cancel()!. Celui ci peut très bien se trouver en cours d'exécution par un thread noyaux différent. Pour simplifier le problème et éviter les problèmes de concurrence, il est alors apparu judicieux de retirer la tâche d'annuler le thread à fonction \verb!thread_cancel()!; Désormais celle-ci se charge uniquement de passer la variable \verb!canceled! du thread à 1. L'annulation est effectuée lors de l'appel de la fonction \verb!_add_job()! celle si vérifie si le thread à ajouter à la file \verb!ready! à été annulé et si son état permet l'annulation. Si c'est le cas, celle ci effectue les opérations requises par une annulation sur le thread puis ne le place simplement pas dans la file.
+=======
 Une fois les threads noyaux implémentés, le code à due être adapté, car plus rien ne garantissait la présence du thread dans la file \verb!ready! au moment de l'appel de \verb!thread_cancel()!. Celui ci peut très bien se trouver en cours d'éxécution par un thread noyaux différent. Pour éviter les problème de concurrence, il est alors apparut judicieux d'effectuer l'annulation au moment du désordonnancement: avant de replacer la tâche dans la file, on vérifie qu'elle n'a pas été annulée sinon ses ressources sont libérées.
+>>>>>>> 44202ee307b1f39e766600b4248cd1ba085d652d

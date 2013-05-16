@@ -99,6 +99,26 @@ static void __destroy()
 
 static void _swap_scheduler (int signal) {
 	thread_yield();
+	/*
+	struct thread *next;
+
+	assert(!LIST_EMPTY(&ready));
+	next = LIST_NEXT(curthread, threads);
+
+	//cas où on arrive en bout de liste : on reboucle sur la tete
+	if (next == NULL) {
+		next = LIST_FIRST(&ready);
+	}
+
+	assert(next != NULL);
+	assert(!next->isdone);
+
+	// swapcontext si nouveau thread schedulé
+	if (next != curthread) {
+		curthread = next;
+		setcontext(&next->uc);
+	}
+	*/
 }
 
 

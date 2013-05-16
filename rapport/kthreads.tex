@@ -55,11 +55,7 @@ En fonction de la quantité de threads noyaux et de tâches, trois cas peuvent s
 	\item Sinon, la file n'est pas vide donc appeler une fonction de changement de contexte \verb!_magicswap()! détaillée plus loin.
 \end{itemize}
 
-<<<<<<< HEAD
-\paragraph{Changements de contextes avec \_magicswap} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
-=======
 \paragraph{Changements de contextes avec \_magicswap()} Afin d'éviter qu'une même tâche soit manipulée par plusieurs threads noyaux à la fois, on associe à chacune d'elles un mutex qui doit être pris par le un thread noyau avant toute opération. Un thread noyau souhaitant exécuter une tâche doit avoir pris le verrou et le conserver pendant toute l'exécution, y compris avant et après le \verb!swapcontext!.
->>>>>>> 44202ee307b1f39e766600b4248cd1ba085d652d
 
 Avec ce schéma et s'il l'on souhaite ne pas repasser au contexte du thread noyau pour réaliser la libération de l'ancienne tâche et le verrouillage d'une nouvelle, il faut pouvoir indiquer à une tâche sa tâche appelante afin de réaliser la libération.
 

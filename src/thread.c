@@ -36,6 +36,9 @@ struct thread {
 	char isdone;
 	void *retval;
 
+        int state;
+        int canceled;
+
 	struct thread *caller;  // points to the thread that called swapcontext
 
 	TAILQ_ENTRY(thread) threads;
@@ -50,6 +53,7 @@ struct thread {
 	// the swapcontext is done from another thread's context, make it point to
 	// that thread.
 };
+
 
 static pthread_key_t key_self;
 static struct thread *_mainth;
@@ -77,6 +81,8 @@ struct thread *_thread_new(void)
 	}
 
 	t->isdone = 0;
+	t->state = THREAD_CANCEL_ENABLE;
+	t->canceled = 0;
 	t->caller = NULL;
 	t->retval = NULL;
 	t->uc_prev = NULL;
@@ -91,12 +97,25 @@ struct thread *_thread_new(void)
 
 static void _add_job(struct thread *t)
 {
-	pthread_mutex_lock(&readymtx);
-	TAILQ_INSERT_TAIL(&ready, t, threads);
-	pthread_mutex_unlock(&t->mtx);
-	pthread_mutex_unlock(&readymtx);
+	if (0 == t->canceled || THREAD_CANCEL_DISABLE == t->state)
+	{
+		pthread_mutex_lock(&readymtx);
+		TAILQ_INSERT_TAIL(&ready, t, threads);
+		pthread_mutex_unlock(&t->mtx);
+		pthread_mutex_unlock(&readymtx);
+		
+		sem_post(&nbready);
+		
+		return;
+	}
 
-	sem_post(&nbready);
+	t->isdone = 0;
+	t->retval = NULL;
+	pthread_mutex_unlock(&t->mtx);
+
+	pthread_mutex_lock(&thcountmtx);
+	thcount--;
+	pthread_mutex_unlock(&thcountmtx);
 }
 
 
@@ -312,6 +331,12 @@ static void __destroy()
 /******************************************/
 /*       IMPLEMENTATION FUNCTIONS         */
 /******************************************/
+thread_t thread_self(void)
+{
+	return pthread_getspecific(key_self);
+}
+
+
 int thread_create(thread_t *newthread, void *(*func)(void *), void *funcarg)
 {
 	void *stack;
@@ -372,6 +397,40 @@ int thread_yield(void)
 	return 0;
 }
 
+int thread_setcancelstate(int state, int *oldstate)
+{
+	struct thread *self = thread_self();
+	
+	assert(self != NULL);
+
+	if (oldstate)
+	{
+		*oldstate = self->state;
+	}
+	
+	self->state = state;
+	
+	return 0;
+}
+
+int thread_cancel(thread_t thread)
+{
+	assert(thread != NULL);
+	
+	if (thread_self() == thread)
+	{
+		thread->canceled = 1;	
+	}
+	else
+	{
+		pthread_mutex_lock(&thread->mtx);
+		thread->canceled = 1;
+		pthread_mutex_unlock(&thread->mtx);
+	}
+		
+	return 0;
+}
+
 
 int thread_join(thread_t thread, void **retval)
 {
@@ -400,12 +459,6 @@ int thread_join(thread_t thread, void **retval)
 	}
 	
 	return rv;
-}
-
-
-thread_t thread_self(void)
-{
-	return pthread_getspecific(key_self);
 }
 
 

@@ -17,7 +17,7 @@
 #include "thread.h"
 
 #ifndef NBKTHREADS
-#define NBKTHREADS 2 // INCLUDING the main thread!
+#define NBKTHREADS 4 // INCLUDING the main thread!
 #endif
 
 #define CONTEXT_STACK_SIZE 32*1024 /* 32 KB stack size for contexts */
@@ -26,6 +26,7 @@
 #define GETTID syscall(SYS_gettid)
 
 static int maintid;
+ucontext_t mainfallback;
 
 pthread_t kthreads[NBKTHREADS-1];
 
@@ -139,12 +140,9 @@ static struct thread *_get_job(void)
 	if (NULL != (t = TAILQ_FIRST(&ready))) {
 		assert(!t->isdone);
 		TAILQ_REMOVE(&ready, t, threads);
-	}
-	pthread_mutex_unlock(&readymtx);
-
-	if (t) {
 		pthread_mutex_lock(&t->mtx);
 	}
+	pthread_mutex_unlock(&readymtx);
 
 	return t;
 }
@@ -153,8 +151,7 @@ static struct thread *_get_job(void)
 // Threads MUST call this function instead of swapcontext
 static int _magicswap(struct thread *self, struct thread *th)
 {
-	int rv;
-	struct thread *caller;
+	int rv = 0;
 
 	{ /* in the calling thread */
 		assert(th);
@@ -173,22 +170,24 @@ static int _magicswap(struct thread *self, struct thread *th)
 	}
 
 	// POOF 
-	rv = swapcontext(&self->uc, &th->uc);
+	swapcontext(&self->uc, &th->uc);
 
-	if (rv) {
-		perror("swapcontext");
-	}
+	//if (rv) {
+	//	perror("swapcontext");
+	//}
 
 	{ /* in some thread, we don't know who we are yet */
-		// release the thread that called swap
-		self = thread_self();
-		caller = self->caller;
+		struct thread *caller, *called;
 
-		assert(!self->isdone);
+		// release the thread that called swap
+		called = thread_self();
+		caller = called->caller;
+
+		assert(!called->isdone);
 
 #ifdef SWAPINFO
 		fprintf(stderr, "* Magicswap out (tid %ld) now in %p\n",
-				GETTID, self);
+				GETTID, called);
 #endif
 
 		// caller may be NULL in the following scenario:
@@ -305,6 +304,23 @@ static void __init()
 	getcontext(&_mainth->uc);
 	_mainth->uc_prev = &_mainth->uc;
 
+	// init fallback for the main thread
+	void *stack = malloc(CONTEXT_STACK_SIZE);
+	if (!stack) {
+		perror("malloc");
+		exit(EXIT_FAILURE);
+	}
+	getcontext(&mainfallback);
+	mainfallback.uc_stack.ss_sp = stack;
+	mainfallback.uc_stack.ss_size = CONTEXT_STACK_SIZE;
+
+	VALGRIND_STACK_REGISTER(
+		mainfallback.uc_stack.ss_sp,
+		mainfallback.uc_stack.ss_sp
+		+ mainfallback.uc_stack.ss_size
+	);
+	makecontext(&mainfallback, (void (*)(void))_clone_func, 1, NULL);
+
 	// per-thread data
 	pthread_key_create(&key_self, NULL);
 	pthread_setspecific(key_self, _mainth); // 'self' is now _mainth
@@ -326,6 +342,8 @@ static void __init()
 __attribute__((destructor))
 static void __destroy()
 {
+	free(mainfallback.uc_stack.ss_sp);
+
 	// special case for the main thread that may not be joined or may not call
 	// thread_exit()
 	if (_mainth) {
@@ -512,7 +530,7 @@ void thread_exit(void *retval)
 #ifdef SWAPINFO
 				fprintf(stderr, "MAIN fall back to the infinite loop\n");
 #endif
-				_clone_func(NULL);
+				swapcontext(&self->uc, &mainfallback);
 			} else {
 #ifdef SWAPINFO
 				fprintf(stderr, "CLONE fall back to the infinite loop\n");

@@ -29,6 +29,8 @@ target_link_libraries (32-switch-many-join thread)
 
 add_executable (51-fibonacci 51-fibonacci.c)
 target_link_libraries (51-fibonacci thread pthread)
+add_executable (51-fibonacci-pthread 51-fibonacci-pthread.c)
+target_link_libraries (51-fibonacci-pthread pthread)
 
 add_executable (52-array-sum 52-array-sum.c)
 target_link_libraries (52-array-sum thread)
@@ -41,6 +43,8 @@ target_link_libraries (54-mergesort thread)
 
 add_executable (55-increment 55-increment.c)
 target_link_libraries (55-increment thread)
+add_executable (55-increment-pthread 55-increment-pthread.c)
+target_link_libraries (55-increment-pthread pthread)
 
 add_executable (56-cancel 56-cancel.c)
 target_link_libraries (56-cancel thread)

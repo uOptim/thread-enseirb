@@ -13,17 +13,17 @@ echo "------------------------------------------------"
 echo "TEST: 13-join-cascade"
 ./tests/13-join-cascade 200
 echo "------------------------------------------------"
-echo "TEST: 21-create-many 200"
-./tests/21-create-many 200
+echo "TEST: 21-create-many 40000"
+./tests/21-create-many 40000
 echo "------------------------------------------------"
-echo "TEST: 22-create-many-recursive 200"
-./tests/22-create-many-recursive 200
+echo "TEST: 22-create-many-recursive 4000"
+./tests/22-create-many-recursive 4000
 echo "------------------------------------------------"
-echo "TEST: 31-switch-many 100 200"
-./tests/31-switch-many 100 200
+echo "TEST: 31-switch-many 400 800"
+./tests/31-switch-many 400 800
 echo "------------------------------------------------"
-echo "TEST: 32-switch-many-join 100 200"
-./tests/32-switch-many-join 100 200
+echo "TEST: 32-switch-many-join 400 800"
+./tests/32-switch-many-join 400 800
 echo "------------------------------------------------"
 echo "TEST: 51-fibonacci 23"
 ./tests/51-fibonacci 23
@@ -37,8 +37,8 @@ echo "------------------------------------------------"
 echo "TEST: 54-mergesort 100"
 ./tests/54-mergesort 100
 echo "------------------------------------------------"
-echo "TEST: 55-increment 10000"
-./tests/55-increment 10000
+echo "TEST: 55-increment 90000"
+./tests/55-increment 90000
 echo "------------------------------------------------"
 echo "TEST: 56-cancel"
 ./tests/56-cancel

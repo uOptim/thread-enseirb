@@ -31,14 +31,14 @@ int main(int argc, char *argv[])
 {
   thread_t th1, th2;
   int err;
-  void *res1 = NULL, *res2 = NULL;
+  void *res = NULL;
   
   err = thread_create(&th1, f, NULL);
   assert(!err);
   err = thread_create(&th2, f, (void*) th1);
   assert(!err);
 
-  err = thread_join(th2, &res2);
+  err = thread_join(th2, &res);
   assert(!err);
   
   return 0;

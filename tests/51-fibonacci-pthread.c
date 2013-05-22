@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <pthread.h>
+#include <errno.h>
 
 /* fibonacci.
  *
@@ -26,13 +27,59 @@ static void * fibo(void *_value)
     return (void*) 1;
 
   err = pthread_create(&th, NULL, fibo, (void*)(value-1));
+  switch(err) {
+	  case EAGAIN:
+		  fprintf(stderr, "EAGAIN\n");
+		  break;
+	  case EINVAL:
+		  fprintf(stderr, "EINVAL\n");
+		  break;
+	  case EPERM:
+		  fprintf(stderr, "EPERM\n");
+		  break;
+  }
   assert(!err);
+
   err = pthread_create(&th2, NULL, fibo, (void*)(value-2));
+  switch(err) {
+	  case EAGAIN:
+		  fprintf(stderr, "EAGAIN\n");
+		  break;
+	  case EINVAL:
+		  fprintf(stderr, "EINVAL\n");
+		  break;
+	  case EPERM:
+		  fprintf(stderr, "EPERM\n");
+		  break;
+  }
   assert(!err);
 
   err = pthread_join(th, &res);
+  switch(err) {
+	  case EAGAIN:
+		  fprintf(stderr, "EAGAIN\n");
+		  break;
+	  case EINVAL:
+		  fprintf(stderr, "EINVAL\n");
+		  break;
+	  case EPERM:
+		  fprintf(stderr, "EPERM\n");
+		  break;
+  }
+
   assert(!err);
   err = pthread_join(th2, &res2);
+  switch(err) {
+	  case EAGAIN:
+		  fprintf(stderr, "EAGAIN\n");
+		  break;
+	  case EINVAL:
+		  fprintf(stderr, "EINVAL\n");
+		  break;
+	  case EPERM:
+		  fprintf(stderr, "EPERM\n");
+		  break;
+  }
   assert(!err);
 
   return (void*)((unsigned long) res + (unsigned long) res2);

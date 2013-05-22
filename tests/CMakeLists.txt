@@ -17,6 +17,8 @@ target_link_libraries (13-join-cascade thread)
 
 add_executable (21-create-many 21-create-many.c)
 target_link_libraries (21-create-many thread)
+add_executable (21-create-many-pthread 21-create-many-pthread.c)
+target_link_libraries (21-create-many-pthread pthread)
 
 add_executable (22-create-many-recursive 22-create-many-recursive.c)
 target_link_libraries (22-create-many-recursive thread)
